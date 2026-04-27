@@ -132,7 +132,6 @@ def update(fn):
                     if not cell:
                         r.append('')
                         continue
-                    x0,y0,x1,y1=cell
                     s = []
                     currenty = 0
                     currentx = 0
@@ -143,16 +142,14 @@ def update(fn):
                             elif char['x0'] - currentx > char['width']*9/32:
                                 s.append(' ')
                             s.append(char['text'])
-                            currentx = char['x1']
+                            currentx = char['x0'] + char['width']*(1-char['matrix'][2])
                             currenty = char['y0']
                     r.append(''.join(s).strip())
                 rows.append(r)
     current = []
     for row in rows:
         #print(row)
-        if 'BLOCK' in row[0].upper():
-            current = []
-            continue
+        if len([i for i in row if i]) < 2: continue
         if re.findall(r'\d\d/\d\d/\d\d\d\d',row[0]):
             for head in row[1:]:
                 if head not in yo: yo[head] = []
