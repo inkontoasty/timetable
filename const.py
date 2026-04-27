@@ -3,10 +3,10 @@ try:
     exec(open('.secret','r').read())
 except FileNotFoundError:
     open('.secret','w').write('''
-        USR = "26020495" # ilearn user id
-        PWD = "ILEARN_PASSWORD"
-        TOKEN = "DISCORD_BOT_TOKEN"
-        GUILD = 1496867465945157632 # server id
+USR = "26020495" # ilearn user id
+PWD = "ILEARN_PASSWORD"
+TOKEN = "DISCORD_BOT_TOKEN"
+GUILD = 1496867465945157632 # server id
     ''')
     raise Exception(".secret file created")
 URL = 'https://ilearn.sunway.edu.my/'
