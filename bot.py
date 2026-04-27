@@ -1,4 +1,3 @@
-#test
 import discord
 from discord.ui import Button, View
 from discord import ButtonStyle
