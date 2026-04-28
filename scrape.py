@@ -1,3 +1,5 @@
+#if cell is None and theres something above append it to c.classrooms
+# may have to use another lib to detect bold atp
 import requests
 from bs4 import BeautifulSoup as Soup
 import pdfplumber
@@ -46,11 +48,11 @@ def download(day,t): # easy part
     return fn
 
 class Class: # whos gonna stop me
-    def __init__(self,lines,classroom): # hard part
-        self.lines = lines
+    def __init__(self,lines,classroom): #ignores groups for now
+        self.lines = [lines[0],' '.join(lines[1:])]
         self.classrooms = [classroom]
         self.text = ' | '.join(lines)
-        self.subjects = [i.replace('-',' ').strip() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
+        self.subjects = [i.replace('-',' ').split('  ')[0].strip() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
         self.courses = {}
         if len(lines)==1:
             self.courses = ['UNCATEGORIZED']
@@ -60,34 +62,32 @@ class Class: # whos gonna stop me
             course = None
             month = 'next'
             year = 'next'
-            proc = self.lines[1].upper().split('-')[0].strip()+'/'
+            proc = self.lines[1].upper().replace('-','/').strip()+'/'
             #print(proc)
+
             for n,i in enumerate(proc):
                 if i in ' /':
                     if current in MONTHS:
                         month = current
                         #print('m',month)
-                        current = ''
                     elif current.isdigit() and int(current) > 20:
                         year = current
                         #print('y',year)
                         if month=='next' and course in self.courses: # maybe 25/26 
                             month = self.courses[course][-1][0]
-                        current = ''
                     elif any(f:=re.findall(r'(Y\d)?(S\d)?',current)[0]): # VU uses Y1S2, Y3S1 etc 
                         if f[1]: year = f[1] # counter intuitive but since month goes first and Y1 goes first
                         if f[0]: month = f[0]
-                        current = ''
-                    elif current.strip():
+                    elif len(current.strip())>1: # groups are one letter 1/2/3/A/B
                         course = current
                         #print('c',course)
-                        current = ''
                         month = 'next'
                         year = 'next'
                     if i == '/' and course:
                         #print('add',course,month,year)
                         if course not in self.courses: self.courses[course]=[]
-                        self.courses[course].append((month,year))
+                        if (month,year) not in self.courses[course]: self.courses[course].append((month,year))
+                    current = ''
                 else: current += i
 
             pmonth = pyear = ''
@@ -139,7 +139,7 @@ def update(fn):
                         if char['upright']:
                             if currenty -char['y0'] > char['height']/3:
                                 s.append('\n')
-                            elif char['x0'] - currentx > char['width']*9/32:
+                            elif char['x0'] - currentx > char['size']*9/16/3:
                                 s.append(' ')
                             s.append(char['text'])
                             currentx = char['x0'] + char['width']*(1-char['matrix'][2])

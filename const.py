@@ -14,3 +14,4 @@ LOGIN = URL+'login/index.php'
 HEAD = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko/20100101 Firefox/149.0'}
 MONTHS = 'JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC'.split()
 WEEKDAYS = 'MON TUE WED THU FRI'.split()
+REPEAT_TIME = 600 #seconds
