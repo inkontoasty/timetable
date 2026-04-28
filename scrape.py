@@ -1,4 +1,3 @@
-#if cell is None and theres something above append it to c.classrooms
 # may have to use another lib to detect bold atp
 import requests
 from bs4 import BeautifulSoup as Soup
@@ -91,18 +90,24 @@ class Class: # whos gonna stop me
                 else: current += i
 
             pmonth = pyear = ''
+            prev = None 
             for course,intakes in list(self.courses.items())[::-1]:
                 a = []
-                for n,(month,year) in enumerate(intakes[::-1]):
-                    if year=='next':
-                        year = pyear
-                    if month=='next':
-                        month = pmonth
-                    pmonth,pyear = month,year
-                    if pmonth and pyear: a.append(month+year)
-                if a: self.courses[course] = a
-                elif len(self.lines[0].split(' -'))>=2: self.courses[course] = [''] # so far only VUENG
-                else:del self.courses[course]
+                print(course,intakes)
+                if prev and intakes==[('next','next')]:
+                    self.courses[course] = self.courses[prev][:]
+                else:
+                    for n,(month,year) in enumerate(intakes[::-1]):
+                        if year=='next':
+                            year = pyear
+                        if month=='next':
+                            month = pmonth
+                        pmonth,pyear = month,year
+                        if pmonth and pyear: a.append(month+year)
+                    if a: self.courses[course] = a
+                    elif len(self.lines[0].split(' -'))>=2: self.courses[course] = [''] # so far only VUENG
+                    else:del self.courses[course]
+                prev = course
 
             a = [] # ajdnasjdnasjdnakjd
             #print(self.courses)
@@ -115,7 +120,7 @@ class Class: # whos gonna stop me
 
         for n,i in enumerate(self.subjects):
             while self.subjects[n][-1].isdigit(): self.subjects[n] = self.subjects[n][:-1].strip()
-            for k in re.findall(' GP *[A-Z]$',i): self.subjects[n] = self.subjects[n].replace(k,'').strip() # what if gpa is a subject gng 
+            for k in re.findall(' GP *[A-Z]$',i): self.subjects[n] = self.subjects[n].replace(k,'').strip() # what if ma gpa is a subject gng
 
     def __eq__(self,other):
         return self.classrooms==other.classrooms and self.subjects==other.subjects and self.courses==other.courses
@@ -168,8 +173,8 @@ def update(fn):
             c = l[n][1][k]
             for c2 in l[n][1][k+1:][:]:
                 if c2.subjects == c.subjects and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
-                    l[n][1][k].classrooms += c2.classrooms[:]
-                    l[n][1].remove(c2)
+                    yo[duration][k].classrooms += c2.classrooms[:]
+                    yo[duration].remove(c2)
             k += 1
     return yo
 

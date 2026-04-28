@@ -80,6 +80,16 @@ async def updater():
     prev_error = None
     while True:
         try:
+            await update_self_roles()
+            break
+        except:
+            t = traceback.format_exc()
+            if t!=prev_error: print(t)
+            prev_error = t
+            print("retrying update_self_roles")
+            await asyncio.sleep(15)
+    while True:
+        try:
             for k,i in [(k,i) for k,v in toadd.items() for i in v]:
                 if k=='webhook':
                     webhooks[i] = await channels[i].create_webhook(name='gurt')
