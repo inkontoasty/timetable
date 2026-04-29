@@ -32,7 +32,6 @@ def download(day,t): # easy part
         text = a.text.upper()
         if day in text and t in text:
             update = day+t+re.findall(r'UPDATED \d\d/\d\d \d\d?.\d\d[A,P]M',text.upper().replace('  ',''))[0]
-            print(update,last_update)
             if update == last_update:
                 return
             last_update = update
@@ -93,7 +92,6 @@ class Class: # whos gonna stop me
             prev = None 
             for course,intakes in list(self.courses.items())[::-1]:
                 a = []
-                print(course,intakes)
                 if prev and intakes==[('next','next')]:
                     self.courses[course] = self.courses[prev][:]
                 else:
@@ -153,7 +151,6 @@ def update(fn):
                 rows.append(r)
     current = []
     for row in rows:
-        #print(row)
         if len([i for i in row if i]) < 2: continue
         if re.findall(r'\d\d/\d\d/\d\d\d\d',row[0]):
             for head in row[1:]:
