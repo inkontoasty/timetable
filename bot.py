@@ -130,7 +130,10 @@ async def timetabler():
             now = datetime.now()
             #now = faketime.next()
 
-            if not (6<=now.hour<=20 and 0<=now.weekday()<=4): continue
+            if not (6<=now.hour<=20 and 0<=now.weekday()<=4):
+                print(now.hour,'zzz')
+                await asyncio.sleep(3600)
+                continue
             day = WEEKDAYS[now.weekday()]
             print(day,now.hour,now.minute)
 
