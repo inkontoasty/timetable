@@ -1,4 +1,3 @@
-# may have to use another lib to detect bold atp
 import requests
 from bs4 import BeautifulSoup as Soup
 import pdfplumber
@@ -26,7 +25,7 @@ def download(day,t): # easy part
         if None in payload: del payload[None]
         r = session.post(LOGIN,data=payload,headers=HEAD)
     soup = Soup(r.content,features='lxml')
-    a = [i for i in soup.find_all('a') if 'classroom allocation' in i.text.lower()][0] # can save one request but nah
+    a = [i for i in soup.find_all('a') if 'classroom allocation' in i.text.lower()][0]
     r = session.get(a['href'])
     for a in Soup(r.content,features='lxml').find_all('a'):
         text = a.text.upper()
@@ -46,13 +45,19 @@ def download(day,t): # easy part
     return fn
 
 class Class: # whos gonna stop me
-    def __init__(self,lines,classroom): #ignores groups for now
+    def __init__(self,lines,classroom,uncat=False): #ignores groups for now
         self.lines = [lines[0],' '.join(lines[1:])]
         self.classrooms = [classroom]
         self.text = ' | '.join(lines)
-        self.subjects = [i.replace('-',' ').split('  ')[0].strip() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
+        self.subjects = [i.replace('-',' ').split('  ')[0].strip().split() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
+        for n,i in enumerate(self.subjects):
+            for m,j in enumerate(i):
+                while self.subjects[n][m] and self.subjects[n][m][-1].isdigit(): self.subjects[n][m] = self.subjects[n][m][:-1].strip()
+            self.subjects[n] = ' '.join(self.subjects[n])
+            for k in re.findall(' GP *[A-Z]$',self.subjects[n]): self.subjects[n] = self.subjects[n].replace(k,'').strip()
+
         self.courses = {}
-        if len(lines)==1:
+        if uncat:
             self.courses = ['UNCATEGORIZED']
             self.subjects = ['UNCATEGORIZED PING']
         else:
@@ -103,22 +108,14 @@ class Class: # whos gonna stop me
                         pmonth,pyear = month,year
                         if pmonth and pyear: a.append(month+year)
                     if a: self.courses[course] = a
-                    elif len(self.lines[0].split(' -'))>=2: self.courses[course] = [''] # so far only VUENG
-                    else:del self.courses[course]
+                    else: self.courses[course] = [''] # so far only VUENG
                 prev = course
 
             a = [] # ajdnasjdnasjdnakjd
             #print(self.courses)
             for k,v in self.courses.items():
                 for i in v: a.append(k+' '+i)
-            if not a:
-                a.append('UNCATEGORIZED')
-                self.subjects = ['UNCATEGORIZED PING']
             self.courses = [i.strip() for i in a]
-
-        for n,i in enumerate(self.subjects):
-            while self.subjects[n][-1].isdigit(): self.subjects[n] = self.subjects[n][:-1].strip()
-            for k in re.findall(' GP *[A-Z]$',i): self.subjects[n] = self.subjects[n].replace(k,'').strip() # what if ma gpa is a subject gng
 
     def __eq__(self,other):
         return self.classrooms==other.classrooms and self.subjects==other.subjects and self.courses==other.courses
@@ -133,11 +130,25 @@ def update(fn):
                 r = []
                 for cell in row.cells:
                     if not cell:
-                        r.append('')
+                        r.append(((1.0,1.0,1.0),''))
                         continue
                     s = []
                     currenty = 0
                     currentx = 0
+                    midx,midy = (cell[2]+cell[0])/2,(cell[3]+cell[1])/2
+                    best = float('inf')
+                    rect = None
+                    for i in page.crop(cell,strict=False).rects:
+                        dist = round((midx-(i['x0']+i['x1'])/2)**2 + (midy-(i['top']+i['bottom'])/2)**2,2)
+                        if dist <= best:
+                            best = dist
+                            rect = i
+                    if rect:
+                        color = rect['non_stroking_color']
+                        if type(color) != tuple:
+                            color = (color,color,color)
+                        color = (round(color[0],2),round(color[1],2),round(color[2],2))
+                    else: color = (1.0,1.0,1.0)
                     for char in page.within_bbox(cell,strict=False).chars:
                         if char['upright']:
                             if currenty -char['y0'] > char['height']/3:
@@ -147,19 +158,25 @@ def update(fn):
                             s.append(char['text'])
                             currentx = char['x0'] + char['width']*(1-char['matrix'][2])
                             currenty = char['y0']
-                    r.append(''.join(s).strip())
+                    r.append((color,''.join(s).strip()))
                 rows.append(r)
+    #return rows
     current = []
     for row in rows:
-        if len([i for i in row if i]) < 2: continue
-        if re.findall(r'\d\d/\d\d/\d\d\d\d',row[0]):
-            for head in row[1:]:
+        #print(row)
+        if len([i for c,i in row if i]) < 2: continue
+        if re.findall(r'\d\d/\d\d/\d\d\d\d',row[0][1]):
+            headcol = {}
+            for color,head in row[1:]:
+                headcol[color] = headcol.setdefault(color,0)+1
                 if head not in yo: yo[head] = []
-            current = row[1:]
+            headcol = max(headcol.keys(),key=lambda k:headcol[k])
+            current = [i[1] for i in row[1:]]
         elif current:
-            for n,cell in enumerate(row[1:]):
+            for n,(color,cell) in enumerate(row[1:]):
                 if cell:
-                    yo[current[n]].append(Class(cell.split('\n'),' | '.join(row[0].split('\n'))))
+                    #print(n,headcol,color,cell)
+                    yo[current[n]].append(Class(cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol))
     l=sorted(yo.items(),key=lambda x:x[0],reverse=True)
     for n,(duration,classes) in enumerate(l[:-1]):
         for c in classes[:]:
