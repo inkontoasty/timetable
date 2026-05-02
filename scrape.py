@@ -136,15 +136,9 @@ def update(fn):
                     currenty = 0
                     currentx = 0
                     midx,midy = (cell[2]+cell[0])/2,(cell[3]+cell[1])/2
-                    best = float('inf')
-                    rect = None
-                    for i in page.crop(cell,strict=False).rects:
-                        dist = round((midx-(i['x0']+i['x1'])/2)**2 + (midy-(i['top']+i['bottom'])/2)**2,2)
-                        if dist <= best:
-                            best = dist
-                            rect = i
+                    rect = page.crop((midx-.001,midy-.001,midx+.001,midy+.001),strict=False).rects
                     if rect:
-                        color = rect['non_stroking_color']
+                        color = rect[-1]['non_stroking_color']
                         if type(color) != tuple:
                             color = (color,color,color)
                         color = (round(color[0],2),round(color[1],2),round(color[2],2))
