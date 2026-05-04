@@ -11,7 +11,7 @@ from const import *
 
 gurt = {}
 last_notify = None
-guild,roles,webhooks,channels=None,{},{},{}
+webhooks = {} # can only fetch by api call so cache here just in case
 
 intents = discord.Intents.default()
 intents.message_content = True
@@ -38,6 +38,21 @@ class RoleView(discord.ui.LayoutView):
         self.add_item(row)
 
 async def update_self_roles():
+    guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
+    try:
+        r = guild.roles[::-1]
+        for n,role in enumerate(r[:-1]):
+            if role.name.isupper():
+                for role2 in r[n+1:]:
+                    if role.name==role2.name:
+                        print("remove dupe",role,len(role.members))
+                        for member in role.members:
+                            await member.add_roles(role2)
+                        await role.delete()
+    except:
+        print("remove role dupe error")
+        print(traceback.format_exc())
+    roles = {i.name:i for i in guild.roles if i.name.isupper()}
     r = [roles[i] for i in sorted(roles)]
     for n,i in enumerate(['choose-intake','choose-subjects']):
         c = [k for k in guild.text_channels if i==k.name][0]
@@ -59,11 +74,11 @@ async def update_self_roles():
 class FakeTime: # testing purposes
     def __init__(self):
         self.day = 0
-        self.hour = 7
-        self.minute = 10
+        self.hour = 6
+        self.minute = 45
     def weekday(self): return self.day
     def next(self):
-        self.minute += 20
+        self.minute += 60
         if self.minute>=60:
             self.minute-=60
             self.hour +=1
@@ -76,6 +91,7 @@ toadd = {'webhook':set(),'channel':set(),'rsubject':set(),'rintake':set()}
 
 @tasks.loop(count=1)
 async def updater():
+    global webhooks
     updated = 0
     prev_error = None
     while True:
@@ -90,20 +106,24 @@ async def updater():
             await asyncio.sleep(15)
     while True:
         try:
+            guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
+            channels = {i.topic:i for i in guild.text_channels}
+            roles = {i.name:i for i in guild.roles if i.name.isupper()}
             for k,i in [(k,i) for k,v in toadd.items() for i in v]:
                 if k=='webhook':
                     webhooks[i] = await channels[i].create_webhook(name='gurt')
                 elif k=='channel':
-                    overwrites = {
-                        guild.default_role: discord.PermissionOverwrite(view_channel=False),
-                        roles[i]: discord.PermissionOverwrite(view_channel=True)
-                    }
-                    channels[i] = await guild.create_text_channel(name=i,topic=i,overwrites=overwrites)
-                    toadd['webhook'].add(i)
-
+                    if i not in channels:
+                        overwrites = {
+                            guild.default_role: discord.PermissionOverwrite(view_channel=False),
+                            roles[i]: discord.PermissionOverwrite(view_channel=True)
+                        }
+                        await guild.create_text_channel(name=i,topic=i,overwrites=overwrites)
+                        toadd['webhook'].add(i)
                 elif k=='rsubject':
-                    roles[i] = await guild.create_role(name=i,color=discord.Color.default())
-                else:
+                    if i not in roles:
+                        roles[i] = await guild.create_role(name=i,color=discord.Color.default())
+                elif i not in roles:
                     roles[i] = await guild.create_role(name=i,color=discord.Color.random())
                     toadd['channel'].add(i)
                 toadd[k].remove(i)
@@ -123,16 +143,21 @@ async def updater():
 
 @tasks.loop(count=1)
 async def timetabler():
-    global last_notify,updated
+    global last_notify,updated,webhooks
     prev_error = None
     while True:
         try:
+            guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
+            channels = {i.topic:i for i in guild.text_channels}
+            roles = {i.name:i for i in guild.roles if i.name.isupper()}
+            try: webhooks = {i.channel.topic:i for i in await guild.webhooks()}
+            except discord.RateLimited: pass
             now = datetime.now()
             #now = faketime.next()
 
             if not (6<=now.hour<=20 and 0<=now.weekday()<=4):
-                print(now.hour,'zzz')
-                await asyncio.sleep(3600)
+                print(now.hour,'zzz',end='\r')
+                await asyncio.sleep(600)
                 continue
             day = WEEKDAYS[now.weekday()]
             print(day,now.hour,now.minute)
@@ -184,26 +209,32 @@ async def timetabler():
 
 @bot.event
 async def on_ready():
-    global guild,channels,roles,webhooks
+    global webhooks
     print("ready")
     while True:
         try:
             guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
-            channels = {i.topic:i for i in guild.text_channels}
-            roles = {i.name:i for i in await guild.fetch_roles() if i.name.isupper()}
             webhooks = {i.channel.topic:i for i in await guild.webhooks()}
             if not timetabler.is_running(): timetabler.start()
             if not updater.is_running(): updater.start()
             break
         except:
+            print(traceback.format_exc())
             print("retrying start bot in 30")
             await asyncio.sleep(30)
 
 @bot.event
 async def on_resumed():
     print("resumed")
-    if not timetabler.is_running(): timetabler.start()
-    if not updater.is_running(): updater.start()
+    while True:
+        try:
+            if not timetabler.is_running(): timetabler.start()
+            if not updater.is_running(): updater.start()
+            break
+        except:
+            print(traceback.format_exc())
+            print("retrying start bot in 30")
+            await asyncio.sleep(30)
 
 @bot.command()
 async def yo(ctx):

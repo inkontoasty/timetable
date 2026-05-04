@@ -49,12 +49,13 @@ class Class: # whos gonna stop me
         self.lines = [lines[0],' '.join(lines[1:])]
         self.classrooms = [classroom]
         self.text = ' | '.join(lines)
-        self.subjects = [i.replace('-',' ').split('  ')[0].strip().split() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
+        self.subjects = [i.replace('-',' ').split('  ').split(':')[0].strip().split() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
         for n,i in enumerate(self.subjects):
             for m,j in enumerate(i):
                 while self.subjects[n][m] and self.subjects[n][m][-1].isdigit(): self.subjects[n][m] = self.subjects[n][m][:-1].strip()
             self.subjects[n] = ' '.join(self.subjects[n])
             for k in re.findall(' GP *[A-Z]$',self.subjects[n]): self.subjects[n] = self.subjects[n].replace(k,'').strip()
+            self.subjects[n] = self.subjects[n].strip()
 
         self.courses = {}
         if uncat:
