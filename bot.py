@@ -166,13 +166,11 @@ async def timetabler():
             fn = scrape.download(day,t)
             print(t,fn)
             if fn:
-                for k,v in scrape.update(fn).items():
-                    print(k,len(v))
-                    gurt[k] = v
+                for k,v in scrape.update(fn).items(): # HH:MM
+                    gurt[60*(int(k[:2])+12*('PM'in t)) + int(k[3:5])] = v
             
             for duration in gurt:
-                minutes = (int(duration[:2]) + 12*('PM' in t))*60 + int(duration[3:5])
-                if last_notify!=minutes and 0 < (minutes - now.hour*60 - now.minute) <= 20:
+                if last_notify!=duration and 0 < (duration - now.hour*60 - now.minute) <= 20:
                     while gurt[duration]:
                         c = gurt[duration][-1]
                         for intake in c.courses:
