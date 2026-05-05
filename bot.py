@@ -171,7 +171,7 @@ async def timetabler():
                     gurt[k] = v
             
             for duration in gurt:
-                minutes = ((int(duration[:2]) + 12*('PM' in t))%24)*60 + int(duration[3:5])
+                minutes = (int(duration[:2]) + 12*('PM' in t))*60 + int(duration[3:5])
                 if last_notify!=minutes and 0 < (minutes - now.hour*60 - now.minute) <= 20:
                     while gurt[duration]:
                         c = gurt[duration][-1]
