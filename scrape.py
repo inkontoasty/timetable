@@ -45,7 +45,10 @@ def download(day,t): # easy part
     return fn
 
 class Class: # whos gonna stop me
-    def __init__(self,lines,classroom,uncat=False): #ignores groups for now
+    def __init__(self,start,lines,classroom,uncat=False): #ignores groups for now
+        self.start = start # hour*60 + minutes
+        self.end = start+60 # rough estimation
+        self.notified = None
         self.lines = [lines[0],' '.join(lines[1:])]
         self.classrooms = [classroom]
         self.text = ' | '.join(lines)
@@ -121,9 +124,9 @@ class Class: # whos gonna stop me
     def __eq__(self,other):
         return self.classrooms==other.classrooms and self.subjects==other.subjects and self.courses==other.courses
 
-def update(fn):
+def update(fn,ampm): # 0 am 1 pm
     doc = pdfplumber.open(os.path.join('stuff',fn))
-    yo = {}
+    yo = []
     rows = []
     for page in doc.pages:
         for table in page.find_tables():
@@ -159,31 +162,40 @@ def update(fn):
     current = []
     for row in rows:
         #print(row)
-        if len([i for c,i in row if i]) < 2: continue
-        if re.findall(r'\d\d/\d\d/\d\d\d\d',row[0][1]):
+        if len([i for c,i in row if i]) < 2: continue # not a timetable row
+        if re.findall(r'\d\d/\d\d/\d\d\d\d',row[0][1]): # table header row Monday\nDD/MM/YYYY
             headcol = {}
             for color,head in row[1:]:
-                headcol[color] = headcol.setdefault(color,0)+1
-                if head not in yo: yo[head] = []
-            headcol = max(headcol.keys(),key=lambda k:headcol[k])
-            current = [i[1] for i in row[1:]]
+                headcol[color] = headcol.setdefault(color,0)+1 # should be same color for all header cells
+            headcol = max(headcol.keys(),key=lambda k:headcol[k]) # calculate mode color just in case
+            current = [i[1] for i in row[1:]] # store times
         elif current:
+            prev = None
             for n,(color,cell) in enumerate(row[1:]):
                 if cell:
                     #print(n,headcol,color,cell)
-                    yo[current[n]].append(Class(cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol))
-    l=sorted(yo.items(),key=lambda x:x[0],reverse=True)
-    for n,(duration,classes) in enumerate(l[:-1]):
-        for c in classes[:]:
-            if c in l[n+1][1]:
-                yo[duration].remove(c)
-        k = 0
-        while k < len(l[n][1]):
-            c = l[n][1][k]
-            for c2 in l[n][1][k+1:][:]:
-                if c2.subjects == c.subjects and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
-                    yo[duration][k].classrooms += c2.classrooms[:]
-                    yo[duration].remove(c2)
-            k += 1
-    return yo
+                    start,end = [[*map(int,i.split('.'))] for i in current[n].split('-')]
+                    if ampm and start[0]==12: # fuck it why is 12pm not midnight
+                        start[0] = 0
+                    start = (ampm*12+start[0])*60 + start[1] # for the column
+                    find = re.findall(r'\((\d\d?)\.(\d\d)',cell) # (HH.MM) or (HH.MM-HH.MM)
+                    if find:
+                        if ampm and int(find[0][0]) == 12:
+                            find[0] = (0,find[0][1])
+                        start = 60*(int(find[0][0])+12*ampm) + int(find[0][1]) # given by cell
+                    now = Class(start,cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol)
+                    if not prev or now!=prev:
+                        yo.append(now)
+                        prev = now
+                    elif prev:
+                        prev.end = now.end
+    k = 0
+    while k < len(yo):
+        c = yo[k]
+        for c2 in yo[k+1:][:]:
+            if c2.start == c.start and c2.subjects == c.subjects and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
+                yo[k].classrooms += c2.classrooms[:]
+                yo.remove(c2)
+        k += 1
+    return sorted(yo,key=lambda c:c.start)
 
