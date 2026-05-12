@@ -1,4 +1,4 @@
-import discord
+import discord # patch on patch on patch playing jenga codebase with myself
 from discord.ui import Button, View
 from discord import ButtonStyle
 from discord.ext import tasks,commands
@@ -9,7 +9,7 @@ import scrape
 import time
 from const import *
 
-gurt = [] # global in case disconnects
+gurt = [[],[]] # global in case disconnects, am/pm lists
 webhooks = {} # can only fetch by api call so cache here just in case
 
 intents = discord.Intents.default()
@@ -72,7 +72,7 @@ async def update_self_roles():
 
 class FakeTime: # testing purposes
     def __init__(self):
-        self.day = 4
+        self.day = 0
         self.hour = 7
         self.minute = 35
     def weekday(self): return self.day
@@ -153,6 +153,7 @@ async def timetabler():
             except discord.RateLimited: pass
             now = datetime.now()
             #now = faketime.next()
+            if now.day==5: print(toadd)
 
             if not (6<=now.hour<=20 and 0<=now.weekday()<=4):
                 print(now.hour,'zzz',end='\r')
@@ -162,49 +163,63 @@ async def timetabler():
             print(day,now.hour,now.minute)
 
             t = f"({'AP'[now.hour>=12]}M)" # 12-1 is still am apparently
+            tbool = 'P' in t
             fn = scrape.download(day,t)
             print(t,fn)
             if fn:
-                gurt += scrape.update(fn,'PM'in t) # HH:MM
+                upd = scrape.update(fn,'PM'in t) # HH:MM
+                i = 0
+                for i in upd:
+                    for x in gurt[tbool]:
+                        if i==x and i.start==x.start and i.end == x.end:
+                            i.notified = x.notified
+                            break
+                gurt[tbool] = upd
             k = 0
-            while k < len(gurt)-1:
-                c = gurt[k]
-                j = k+1
-                while j < len(gurt):
-                    c2 = gurt[j]
-                    if abs(c2.start-c.end)<=60 and c.subjects == c2.subjects and any(map(lambda i:i in c.classrooms,c2.classrooms)) and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
-                        gurt.pop(j)
-                    j+=1
-                k+=1
+            if tbool: # remove pm/am overlap classes
+                while k < len(gurt[0]):
+                    c = gurt[0][k]
+                    j = 0
+                    while j < len(gurt[1]):
+                        c2 = gurt[1][j]
+                        if c2.start<=c.end and c.subjects == c2.subjects and any(map(lambda i:i in c.classrooms,c2.classrooms)) and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
+                            gurt[1].pop(j)
+                        else: j+=1
+                    k+=1
             mins = now.hour*60 + now.minute
-            for c in gurt[:]:
-                if not c.notified and 0 < (c.start - mins) <= 20:
-                    for intake in c.courses:
-                        if intake not in roles:
-                            toadd['rintake'].add(intake)
-                    for subject in c.subjects:
-                        if subject not in roles:
-                            toadd['rsubject'].add(subject)
-                    for intake in c.courses:
-                        if intake not in channels and intake in roles:
-                            toadd['channel'].add(intake)
-                        if intake not in webhooks and intake in channels:
-                            toadd['webhook'].add(intake)
-                        if intake in webhooks:
-                            try:
-                                p = ' '.join(f'<@&{roles[subject].id}>' for subject in c.subjects)
-                            except: p = ' '.join(subject for subject in c.subjects)
-                            try:
-                                await webhooks[intake].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
-                            except discord.RateLimited:
-                                await channels[intake].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
-                            strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
-                            print(intake,strings)
-                            await asyncio.sleep(3)
-                            #open(f'test\\{intake}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings}\n')
-                    c.notified = mins
-                if (not c.notified and mins > c.start) or (c.notified and mins - c.notified > 120):
-                    gurt.remove(c)
+            for l in [0,1]:
+                classn = 0
+                while classn < len(gurt[l]):
+                    c = gurt[l][classn]
+                    if not c.notified and 0 < (c.start - mins) <= 20:
+                        for intake in c.courses:
+                            if intake not in roles:
+                                toadd['rintake'].add(intake)
+                        for subject in c.subjects:
+                            if subject not in roles:
+                                toadd['rsubject'].add(subject)
+                        for intake in c.courses:
+                            if intake not in channels and intake in roles:
+                                toadd['channel'].add(intake)
+                            if intake not in webhooks and intake in channels:
+                                toadd['webhook'].add(intake)
+                            if intake in webhooks:
+                                try:
+                                    p = ' '.join(f'<@&{roles[subject].id}>' for subject in c.subjects)
+                                except: p = ' '.join(subject for subject in c.subjects)
+                                try:
+                                    await webhooks[intake].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
+                                except discord.RateLimited:
+                                    await channels[intake].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
+                                strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
+                                print(intake,strings)
+                                await asyncio.sleep(3)
+                                #open(f'test\\{intake}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
+                        c.notified = mins
+                    if (not c.notified and mins > c.start) or (c.notified and mins - c.notified > 120):
+                        gurt[l].pop(classn)
+                    else:
+                        classn += 1
             await asyncio.sleep(REPEAT_TIME-(time.time()+REPEAT_TIME)%REPEAT_TIME)
         except:
             t = traceback.format_exc()

@@ -1,9 +1,10 @@
-import requests
+import requests # this is by no means perfect its simply a lot more than good enough
 from bs4 import BeautifulSoup as Soup
 import pdfplumber
 import re
 import os
 from const import *
+import random
 
 last_update = None
 session = requests.Session()
@@ -31,7 +32,7 @@ def download(day,t): # easy part
         text = a.text.upper()
         if day in text and t in text:
             update = day+t+re.findall(r'UPDATED \d\d/\d\d \d\d?.\d\d[A,P]M',text.upper().replace('  ',''))[0]
-            if update == last_update:
+            if update == last_update and random.random()<.7:
                 return
             last_update = update
             break
@@ -184,11 +185,21 @@ def update(fn,ampm): # 0 am 1 pm
                             find[0] = (0,find[0][1])
                         start = 60*(int(find[0][0])+12*ampm) + int(find[0][1]) # given by cell
                     now = Class(start,cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol)
-                    if not prev or now!=prev:
+                    find2 = re.findall(r'\(\d\d?\.\d\d-(\d\d?)\.(\d\d)',cell)
+                    if find2:
+                        if ampm and int(find2[0][0]) == 12:
+                            fin2d[0] = (0,find2[0][1])
+                        now.end = 60*(int(find2[0][0])+12*ampm) + int(find2[0][1]) # given by cell
+                        yo.append(now)
+                        prev = None
+                    elif not prev or now!=prev:
                         yo.append(now)
                         prev = now
                     elif prev:
-                        prev.end = now.end
+                        if find:
+                            prev.end = now.start
+                            prev = None
+                        else: prev.end = now.end
     k = 0
     while k < len(yo):
         c = yo[k]
