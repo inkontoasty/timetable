@@ -151,8 +151,8 @@ async def timetabler():
             roles = {i.name:i for i in guild.roles if i.name.isupper()}
             try: webhooks = {i.channel.topic:i for i in await guild.webhooks()}
             except discord.RateLimited: pass
-            #now = datetime.now()
-            now = faketime.next()
+            now = datetime.now()
+            #now = faketime.next()
             if now.day==5: print(toadd)
 
             if not (6<=now.hour<=20 and 0<=now.weekday()<=4):
