@@ -72,7 +72,7 @@ async def update_self_roles():
 
 class FakeTime: # testing purposes
     def __init__(self):
-        self.day = 0
+        self.day = 4
         self.hour = 7
         self.minute = 35
     def weekday(self): return self.day
@@ -151,8 +151,8 @@ async def timetabler():
             roles = {i.name:i for i in guild.roles if i.name.isupper()}
             try: webhooks = {i.channel.topic:i for i in await guild.webhooks()}
             except discord.RateLimited: pass
-            now = datetime.now()
-            #now = faketime.next()
+            #now = datetime.now()
+            now = faketime.next()
             if now.day==5: print(toadd)
 
             if not (6<=now.hour<=20 and 0<=now.weekday()<=4):
@@ -176,16 +176,18 @@ async def timetabler():
                             break
                 gurt[tbool] = upd
             k = 0
-            if tbool: # remove pm/am overlap classes
-                while k < len(gurt[0]):
-                    c = gurt[0][k]
-                    j = 0
-                    while j < len(gurt[1]):
-                        c2 = gurt[1][j]
-                        if c2.start<=c.end and c.subjects == c2.subjects and any(map(lambda i:i in c.classrooms,c2.classrooms)) and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
-                            gurt[1].pop(j)
-                        else: j+=1
-                    k+=1
+            while k < len(gurt[0]+gurt[1]):
+                c = (gurt[0]+gurt[1])[k]
+                j = k+1
+                while j < len(gurt[0]+gurt[1]):
+                    c2 = (gurt[0]+gurt[1])[j]
+                    if c2.start<=c.end and c.subjects == c2.subjects and any(map(lambda i:i in c.classrooms,c2.classrooms)) and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
+                        if j < len(gurt[0]):
+                            gurt[0].pop(j)
+                        else:
+                            gurt[1].pop(j-len(gurt[0]))
+                    else: j+=1
+                k+=1
             mins = now.hour*60 + now.minute
             for l in [0,1]:
                 classn = 0
@@ -214,7 +216,7 @@ async def timetabler():
                                 strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
                                 print(intake,strings)
                                 await asyncio.sleep(3)
-                                #open(f'test\\{intake}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
+                                open(f'test\\{intake}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
                         c.notified = mins
                     if (not c.notified and mins > c.start) or (c.notified and mins - c.notified > 120):
                         gurt[l].pop(classn)
