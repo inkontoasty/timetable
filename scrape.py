@@ -32,7 +32,7 @@ def download(day,t): # easy part
         text = a.text.upper()
         if day in text and t in text:
             update = day+t+re.findall(r'UPDATED \d\d/\d\d \d\d?.\d\d[A,P]M',text.upper().replace('  ',''))[0]
-            if update == last_update and random.random()<.7:
+            if update == last_update:# and random.random()<.7:
                 return
             last_update = update
             break

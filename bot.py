@@ -72,7 +72,7 @@ async def update_self_roles():
 
 class FakeTime: # testing purposes
     def __init__(self):
-        self.day = 4
+        self.day = 0
         self.hour = 7
         self.minute = 35
     def weekday(self): return self.day
@@ -186,6 +186,7 @@ async def timetabler():
                             gurt[0].pop(j)
                         else:
                             gurt[1].pop(j-len(gurt[0]))
+                        c.end = c2.end
                     else: j+=1
                 k+=1
             mins = now.hour*60 + now.minute
@@ -216,7 +217,7 @@ async def timetabler():
                                 strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
                                 print(intake,strings)
                                 await asyncio.sleep(3)
-                                open(f'test\\{intake}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
+                                #open(f'test\\{intake}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
                         c.notified = mins
                     if (not c.notified and mins > c.start) or (c.notified and mins - c.notified > 120):
                         gurt[l].pop(classn)
