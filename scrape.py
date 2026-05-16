@@ -46,84 +46,106 @@ def download(day,t): # easy part
     return fn
 
 class Class: # whos gonna stop me
-    def __init__(self,start,lines,classroom,uncat=False): #ignores groups for now
-        self.start = start # hour*60 + minutes
-        self.end = start+60 # rough estimation
+    def __init__(self,start,end,course,subjects,classrooms,text): #ignores groups for now
+        self.start = start
+        self.end = end
         self.notified = None
-        self.lines = [lines[0],' '.join(lines[1:])]
-        self.classrooms = [classroom]
-        self.text = ' | '.join(lines)
-        self.subjects = [i.replace('-',' ').split('  ')[0].split(':')[0].strip().split() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
-        for n,i in enumerate(self.subjects):
-            for m,j in enumerate(i):
-                while self.subjects[n][m] and self.subjects[n][m][-1].isdigit(): self.subjects[n][m] = self.subjects[n][m][:-1].strip()
-            self.subjects[n] = ' '.join(self.subjects[n])
-            for k in re.findall(' GP *[A-Z]$',self.subjects[n]): self.subjects[n] = self.subjects[n].replace(k,'').strip()
-            self.subjects[n] = self.subjects[n].strip()
-
-        self.courses = {}
-        if uncat:
-            self.courses = ['UNCATEGORIZED']
-            self.subjects = ['UNCATEGORIZED PING']
-        else:
-            current = '' # tokenizer time
-            course = None
-            month = 'next'
-            year = 'next'
-            proc = self.lines[1].upper().replace('-','/').strip()+'/'
-            #print(proc)
-
-            for n,i in enumerate(proc):
-                if i in ' /':
-                    if current in MONTHS:
-                        month = current
-                        #print('m',month)
-                    elif current.isdigit() and int(current) > 20:
-                        year = current
-                        #print('y',year)
-                        if month=='next' and course in self.courses: # maybe 25/26 
-                            month = self.courses[course][-1][0]
-                    elif any(f:=re.findall(r'(Y\d)?(S\d)?',current)[0]): # VU uses Y1S2, Y3S1 etc 
-                        if f[1]: year = f[1] # counter intuitive but since month goes first and Y1 goes first
-                        if f[0]: month = f[0]
-                    elif len(current.strip())>1: # groups are one letter 1/2/3/A/B
-                        course = current
-                        #print('c',course)
-                        month = 'next'
-                        year = 'next'
-                    if i == '/' and course:
-                        #print('add',course,month,year)
-                        if course not in self.courses: self.courses[course]=[]
-                        if (month,year) not in self.courses[course]: self.courses[course].append((month,year))
-                    current = ''
-                else: current += i
-
-            pmonth = pyear = ''
-            prev = None 
-            for course,intakes in list(self.courses.items())[::-1]:
-                a = []
-                if prev and intakes==[('next','next')]:
-                    self.courses[course] = self.courses[prev][:]
-                else:
-                    for n,(month,year) in enumerate(intakes[::-1]):
-                        if year=='next':
-                            year = pyear
-                        if month=='next':
-                            month = pmonth
-                        pmonth,pyear = month,year
-                        if pmonth and pyear: a.append(month+year)
-                    if a: self.courses[course] = a
-                    else: self.courses[course] = [''] # so far only VUENG
-                prev = course
-
-            a = [] # ajdnasjdnasjdnakjd
-            #print(self.courses)
-            for k,v in self.courses.items():
-                for i in v: a.append(k+' '+i)
-            self.courses = [i.strip() for i in a]
+        self.course = course
+        self.subjects = subjects
+        self.classrooms = classrooms
+        self.text = text
+        self.line1 = text.split('|')[-1].strip()
 
     def __eq__(self,other):
-        return self.classrooms==other.classrooms and self.subjects==other.subjects and self.courses==other.courses
+        return self.subjects==other.subjects and self.course==other.course and self.line1==other.line1
+
+def gettime(s,ampm):
+    s = re.findall(r'(\d\d?)\.(\d\d)(-(\d\d?)\.(\d\d))?',s)
+    start = None
+    end = None
+    if s:
+        s=s[0]
+        start = (int(s[0])+12*(ampm and s[0]!='12'))*60 + int(s[1])
+        if s[-1]:
+            end = (int(s[-2])+12*(ampm and s[-2]!='12'))*60 + int(s[-1])
+            if end<start and not ampm:
+                end += 12*60
+    return start,end
+
+def make_classes(start,end,lines,classroom,uncategorized):
+    lines = [lines[0],' '.join(lines[1:])]
+    classrooms = [classroom]
+    text = ' | '.join(lines)
+    subjects = [i.replace('-',' ').split('  ')[0].split(':')[0].strip().split() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
+    
+    for n,i in enumerate(subjects): # e.g MATH1 - MATH, MATH1 ENR - MATH ENR, MATH GpA - MATH
+        for m,j in enumerate(i):
+            while subjects[n][m] and subjects[n][m][-1].isdigit(): subjects[n][m] = subjects[n][m][:-1].strip()
+        subjects[n] = ' '.join(subjects[n])
+        for k in re.findall(' GP *[A-Z]$',subjects[n]): subjects[n] = subjects[n].replace(k,'').strip()
+        subjects[n] = subjects[n].strip()
+
+    courses = {}
+    if uncategorized:
+        return [Class(start,end,'UNCATEGORIZED',['UNCATEGORIZED PING'],classrooms,text)]
+    else:
+        current = '' # tokenizer time
+        course = None
+        month = 'next'
+        year = 'next'
+        proc = lines[1].upper().replace('-','/').strip()+'/'
+        #print(proc)
+
+        for n,i in enumerate(proc):
+            if i in ' /':
+                if current in MONTHS:
+                    month = current
+                    #print('m',month)
+                elif current.isdigit() and int(current) > 20:
+                    year = current
+                    #print('y',year)
+                    if month=='next' and course in courses: # maybe 25/26 
+                        month = courses[course][-1][0]
+                elif any(f:=re.findall(r'(Y\d)?(S\d)?',current)[0]): # VU uses Y1S2, Y3S1 etc 
+                    if f[1]: year = f[1] # counter intuitive but since month goes first and Y1 goes first
+                    if f[0]: month = f[0]
+                elif len(current.strip())>1: # groups are one letter 1/2/3/A/B
+                    course = current
+                    #print('c',course)
+                    month = 'next'
+                    year = 'next'
+                if i == '/' and course:
+                    #print('add',course,month,year)
+                    if course not in courses: courses[course]=[]
+                    if (month,year) not in courses[course]: courses[course].append((month,year))
+                current = ''
+            else: current += i
+
+        pmonth = pyear = ''
+        prev = None 
+        for course,intakes in list(courses.items())[::-1]:
+            a = []
+            if prev and intakes==[('next','next')]:
+                courses[course] = courses[prev][:]
+            else:
+                for n,(month,year) in enumerate(intakes[::-1]):
+                    if year=='next':
+                        year = pyear
+                    if month=='next':
+                        month = pmonth
+                    pmonth,pyear = month,year
+                    if pmonth and pyear: a.append(month+year)
+                if a: courses[course] = a
+                else: courses[course] = [''] # so far only VUENG
+            prev = course
+
+        a = [] # ajdnasjdnasjdnakjd
+        #print(courses)
+        for k,v in courses.items():
+            for i in v:
+                a.append(Class(start,end,k+' '+i,subjects,classrooms,text))
+
+    return a
 
 def update(fn,ampm): # 0 am 1 pm
     doc = pdfplumber.open(os.path.join('stuff',fn))
@@ -175,38 +197,36 @@ def update(fn,ampm): # 0 am 1 pm
             for n,(color,cell) in enumerate(row[1:]):
                 if cell:
                     #print(n,headcol,color,cell)
-                    start,end = [[*map(int,i.split('.'))] for i in current[n].split('-')]
-                    if ampm and start[0]==12: # fuck it why is 12pm not midnight
-                        start[0] = 0
-                    start = (ampm*12+start[0])*60 + start[1] # for the column
-                    find = re.findall(r'\((\d\d?)\.(\d\d)',cell) # (HH.MM) or (HH.MM-HH.MM)
-                    if find:
-                        if ampm and int(find[0][0]) == 12:
-                            find[0] = (0,find[0][1])
-                        start = 60*(int(find[0][0])+12*ampm) + int(find[0][1]) # given by cell
-                    now = Class(start,cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol)
-                    find2 = re.findall(r'\(\d\d?\.\d\d-(\d\d?)\.(\d\d)',cell)
-                    if find2:
-                        if ampm and int(find2[0][0]) == 12:
-                            fin2d[0] = (0,find2[0][1])
-                        now.end = 60*(int(find2[0][0])+12*ampm) + int(find2[0][1]) # given by cell
-                        yo.append(now)
+                    start,end = gettime(current[n],ampm)
+                    s,e = gettime(cell,ampm)
+                    start = s or start
+                    end = e or end
+                    now = make_classes(start,end,cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol)
+                    if e:
+                        yo += now
                         prev = None
                     elif not prev or now!=prev:
-                        yo.append(now)
+                        yo += now
                         prev = now
                     elif prev:
-                        if find:
-                            prev.end = now.start
+                        if s:
+                            for i in prev:
+                                i.end = now[0].start
                             prev = None
-                        else: prev.end = now.end
+                        else:
+                            for i in prev:
+                                i.end = now[0].end
     k = 0
     while k < len(yo):
         c = yo[k]
-        for c2 in yo[k+1:][:]:
-            if c2.start == c.start and c2.subjects == c.subjects and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
+        j = k+1
+        while j < len(yo):
+            c2 = yo[j]
+            if c==c2 and c.start==c2.start and c.end==c2.end:
                 yo[k].classrooms += c2.classrooms[:]
-                yo.remove(c2)
+                yo.pop(j)
+            else:
+                j+=1
         k += 1
     return sorted(yo,key=lambda c:c.start)
 

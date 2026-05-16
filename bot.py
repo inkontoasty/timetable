@@ -9,6 +9,7 @@ import scrape
 import time
 from const import *
 
+TEST = False
 gurt = [[],[]] # global in case disconnects, am/pm lists
 webhooks = {} # can only fetch by api call so cache here just in case
 
@@ -144,16 +145,19 @@ async def updater():
 async def timetabler():
     global webhooks,gurt
     prev_error = None
+    prevfn = None
     while True:
         try:
-            guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
-            channels = {i.topic:i for i in guild.text_channels}
-            roles = {i.name:i for i in guild.roles if i.name.isupper()}
-            try: webhooks = {i.channel.topic:i for i in await guild.webhooks()}
-            except discord.RateLimited: pass
-            now = datetime.now()
-            #now = faketime.next()
-            if now.day==5: print(toadd)
+            if not TEST:
+                guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
+                channels = {i.topic:i for i in guild.text_channels}
+                roles = {i.name:i for i in guild.roles if i.name.isupper()}
+                try: webhooks = {i.channel.topic:i for i in await guild.webhooks()}
+                except discord.RateLimited: pass
+                now = datetime.now()
+            else:
+                now = faketime.next()
+                if now.day==5: print(toadd)
 
             if not (6<=now.hour<=20 and 0<=now.weekday()<=4):
                 print(now.hour,'zzz',end='\r')
@@ -164,66 +168,89 @@ async def timetabler():
 
             t = f"({'AP'[now.hour>=12]}M)" # 12-1 is still am apparently
             tbool = 'P' in t
-            fn = scrape.download(day,t)
+            if TEST:
+                fn = day+'_'+t[1:-1]+'.pdf'
+                if prevfn!=fn: prevfn=fn
+                else: fn=None
+            else: fn = scrape.download(day,t)
             print(t,fn)
+
             if fn:
-                upd = scrape.update(fn,'PM'in t) # HH:MM
-                i = 0
-                for i in upd:
-                    for x in gurt[tbool]:
-                        if i==x and i.start==x.start and i.end == x.end:
+                cache = gurt[tbool][:]
+                gurt[tbool] = scrape.update(fn,'PM'in t)
+                k = 0 # if bug edit here
+                while k < len(gurt[tbool]): # merge same classroom
+                    c = gurt[tbool][k]
+                    j = k+1
+                    while j < len(gurt[tbool]):
+                        c2 = gurt[tbool][j]
+                        if c==c2 and c.start==c2.start and c.end==c2.end:
+                            gurt[tbool][k].classrooms += c2.classrooms[:]
+                            gurt[tbool].pop(j)
+                        else:
+                            j+=1
+                    k += 1
+                k = 0
+                while k < len(gurt[0]+gurt[1]): # merge adjacent classes
+                    # known issues im not fixing
+                    # - a class from 12-1pm (from am file) and another from 1.30-2pm (from pm file) interpreted as 12-1pm only somehow
+                    # - adjacent class from same intake but different group only sends one ping
+                    c = (gurt[0]+gurt[1])[k]
+                    j = k+1
+                    while j < len(gurt[0]+gurt[1]):
+                        c2 = (gurt[0]+gurt[1])[j]
+                        if ((k<len(gurt[0])and j>=len(gurt[0])and c2.start-c.end<60) or c2.start<=c.end) and c==c2 and c2.classrooms not in c.classrooms:
+                            c.end = c2.end
+                            if j < len(gurt[0]):
+                                gurt[0].pop(j)
+                            else:
+                                gurt[1].pop(j-len(gurt[0]))
+                        else: j+=1
+                    k+=1
+                for i in gurt[tbool]: # later
+                    for x in cache:
+                        if i==x and i.classrooms==x.classrooms:
                             i.notified = x.notified
                             break
-                gurt[tbool] = upd
-            k = 0
-            while k < len(gurt[0]+gurt[1]):
-                c = (gurt[0]+gurt[1])[k]
-                j = k+1
-                while j < len(gurt[0]+gurt[1]):
-                    c2 = (gurt[0]+gurt[1])[j]
-                    if c2.start<=c.end and c.subjects == c2.subjects and any(map(lambda i:i in c.classrooms,c2.classrooms)) and c2.text.split('|')[-1].strip()==c.text.split('|')[-1].strip():
-                        if j < len(gurt[0]):
-                            gurt[0].pop(j)
-                        else:
-                            gurt[1].pop(j-len(gurt[0]))
-                        c.end = c2.end
-                    else: j+=1
-                k+=1
+
             mins = now.hour*60 + now.minute
             for l in [0,1]:
                 classn = 0
                 while classn < len(gurt[l]):
                     c = gurt[l][classn]
                     if not c.notified and 0 < (c.start - mins) <= 20:
-                        for intake in c.courses:
-                            if intake not in roles:
-                                toadd['rintake'].add(intake)
-                        for subject in c.subjects:
-                            if subject not in roles:
-                                toadd['rsubject'].add(subject)
-                        for intake in c.courses:
-                            if intake not in channels and intake in roles:
-                                toadd['channel'].add(intake)
-                            if intake not in webhooks and intake in channels:
-                                toadd['webhook'].add(intake)
-                            if intake in webhooks:
+                        if not TEST:
+                            if c.course not in roles:
+                                toadd['rintake'].add(c.course)
+                            for subject in c.subjects:
+                                if subject not in roles:
+                                    toadd['rsubject'].add(subject)
+                            if c.course not in channels and c.course in roles:
+                                toadd['channel'].add(c.course)
+                            if c.course not in webhooks and c.course in channels:
+                                toadd['webhook'].add(c.course)
+                        if TEST or c.course in webhooks:
+                            strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
+                            print(c.course,strings)
+                            if TEST:
+                                open(f'test\\{c.course}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
+                            else:
                                 try:
                                     p = ' '.join(f'<@&{roles[subject].id}>' for subject in c.subjects)
                                 except: p = ' '.join(subject for subject in c.subjects)
                                 try:
-                                    await webhooks[intake].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
+                                    await webhooks[c.course].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
                                 except discord.RateLimited:
-                                    await channels[intake].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
-                                strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
-                                print(intake,strings)
+                                    await channels[c.course].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
                                 await asyncio.sleep(3)
-                                #open(f'test\\{intake}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
                         c.notified = mins
                     if (not c.notified and mins > c.start) or (c.notified and mins - c.notified > 120):
                         gurt[l].pop(classn)
                     else:
                         classn += 1
-            await asyncio.sleep(REPEAT_TIME-(time.time()+REPEAT_TIME)%REPEAT_TIME)
+            if not TEST: await asyncio.sleep(REPEAT_TIME-(time.time()+REPEAT_TIME)%REPEAT_TIME)
+        except KeyboardInterrupt:
+            raise Exception("bye bye")
         except:
             t = traceback.format_exc()
             if t != prev_error: print(t)
@@ -237,10 +264,11 @@ async def on_ready():
     print("ready")
     while True:
         try:
-            guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
-            webhooks = {i.channel.topic:i for i in await guild.webhooks()}
+            if not TEST:
+                guild = bot.get_guild(GUILD) or await bot.fetch_guild(GUILD)
+                webhooks = {i.channel.topic:i for i in await guild.webhooks()}
+                if not updater.is_running(): updater.start()
             if not timetabler.is_running(): timetabler.start()
-            if not updater.is_running(): updater.start()
             break
         except:
             print(traceback.format_exc())
@@ -270,4 +298,8 @@ async def yo(ctx):
         else:
             await ctx.author.add_roles(r)
 
-if __name__ == '__main__': bot.run(TOKEN)
+if __name__ == '__main__':
+    if TEST:
+        asyncio.run(timetabler())
+    else:
+        bot.run(TOKEN)
