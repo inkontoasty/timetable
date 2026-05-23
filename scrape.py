@@ -73,7 +73,7 @@ def gettime(s,ampm):
     return start,end
 
 def make_classes(start,end,lines,classroom,uncategorized):
-    lines = [lines[0],' '.join(lines[1:])]
+    lines = [lines[0].split('|')[0].strip(),' '.join([i.split('|')[0].strip() for i in lines[1:]]).replace('\\','/')]
     classrooms = [classroom]
     text = ' | '.join(lines)
     subjects = [i.replace('-',' ').split('  ')[0].split(':')[0].strip().split() for i in lines[0].split(' -')[0].split('(')[0].upper().split('/')]
@@ -83,7 +83,9 @@ def make_classes(start,end,lines,classroom,uncategorized):
             while subjects[n][m] and subjects[n][m][-1].isdigit(): subjects[n][m] = subjects[n][m][:-1].strip()
         subjects[n] = ' '.join(subjects[n])
         for k in re.findall(' GP *[A-Z]$',subjects[n]): subjects[n] = subjects[n].replace(k,'').strip()
+        if len(subjects[n].split()[-1])==1: subjects[n] = ' '.join(subjects[n].split()[:-1]) # MATH B
         subjects[n] = subjects[n].strip()
+    subjects = [i for i in subjects if i]
 
     courses = {}
     if uncategorized:
@@ -107,7 +109,7 @@ def make_classes(start,end,lines,classroom,uncategorized):
                     if month=='next' and course in courses: # maybe 25/26 
                         month = courses[course][-1][0]
                 elif any(f:=re.findall(r'(Y\d)?(S\d)?',current)[0]): # VU uses Y1S2, Y3S1 etc 
-                    if f[1]: year = f[1] # counter intuitive but since month goes first and Y1 goes first
+                    if f[1]: year = f[1] # i forgot why this works i think its to use the same logic as everything else
                     if f[0]: month = f[0]
                 elif len(current.strip())>1: # groups are one letter 1/2/3/A/B
                     course = current

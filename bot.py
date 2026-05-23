@@ -172,6 +172,7 @@ async def timetabler():
                 fn = day+'_'+t[1:-1]+'.pdf'
                 if prevfn!=fn: prevfn=fn
                 else: fn=None
+                #fn = scrape.download(day,t)
             else: fn = scrape.download(day,t)
             print(t,fn)
 
@@ -196,21 +197,26 @@ async def timetabler():
                     # - a class from 12-1pm (from am file) and another from 1.30-2pm (from pm file) interpreted as 12-1pm only somehow
                     # - adjacent class from same intake but different group only sends one ping
                     c = (gurt[0]+gurt[1])[k]
+
                     j = k+1
                     while j < len(gurt[0]+gurt[1]):
                         c2 = (gurt[0]+gurt[1])[j]
                         if ((k<len(gurt[0])and j>=len(gurt[0])and c2.start-c.end<60) or c2.start<=c.end) and c==c2 and c2.classrooms not in c.classrooms:
-                            c.end = c2.end
+                            if k < len(gurt[0]):
+                                gurt[0][k].end = c2.end if c2.start==c.end else c2.start
+                            else:
+                                gurt[1][k-len(gurt[0])].end = c2.end if c2.start==c.end else c2.start
                             if j < len(gurt[0]):
                                 gurt[0].pop(j)
                             else:
                                 gurt[1].pop(j-len(gurt[0]))
                         else: j+=1
                     k+=1
-                for i in gurt[tbool]: # later
+                for i in gurt[tbool]:
                     for x in cache:
-                        if i==x and i.classrooms==x.classrooms:
+                        if i==x and i.classrooms==x.classrooms and i.start==x.start:
                             i.notified = x.notified
+                            i.end = x.end
                             break
 
             mins = now.hour*60 + now.minute
@@ -231,9 +237,9 @@ async def timetabler():
                                 toadd['webhook'].add(c.course)
                         if TEST or c.course in webhooks:
                             strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
-                            print(c.course,strings)
+                            #print(c.course,strings)
                             if TEST:
-                                open(f'test\\{c.course}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start//60}.{c.start%60}-{c.end//60}.{c.end%60}\n')
+                                open(f'test\\{c.course}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start/60}-{c.end/60}\n')
                             else:
                                 try:
                                     p = ' '.join(f'<@&{roles[subject].id}>' for subject in c.subjects)
@@ -244,7 +250,7 @@ async def timetabler():
                                     await channels[c.course].send(f'{p} {" / ".join(c.classrooms)} | {c.text}')
                                 await asyncio.sleep(3)
                         c.notified = mins
-                    if (not c.notified and mins > c.start) or (c.notified and mins - c.notified > 120):
+                    if (not c.notified and mins > c.start) or (c.notified and mins - c.notified > 400):
                         gurt[l].pop(classn)
                     else:
                         classn += 1
