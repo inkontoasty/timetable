@@ -9,7 +9,7 @@ import scrape
 import time
 from const import *
 
-TEST = True
+TEST = False
 gurt = [[],[]] # global in case disconnects, am/pm lists
 webhooks = {} # can only fetch by api call so cache here just in case
 
