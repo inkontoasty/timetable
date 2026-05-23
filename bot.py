@@ -9,7 +9,7 @@ import scrape
 import time
 from const import *
 
-TEST = False
+TEST = True
 gurt = [[],[]] # global in case disconnects, am/pm lists
 webhooks = {} # can only fetch by api call so cache here just in case
 
@@ -197,11 +197,12 @@ async def timetabler():
                     # - a class from 12-1pm (from am file) and another from 1.30-2pm (from pm file) interpreted as 12-1pm only somehow
                     # - adjacent class from same intake but different group only sends one ping
                     c = (gurt[0]+gurt[1])[k]
-
+                    shuck = True
                     j = k+1
                     while j < len(gurt[0]+gurt[1]):
                         c2 = (gurt[0]+gurt[1])[j]
-                        if ((k<len(gurt[0])and j>=len(gurt[0])and c2.start-c.end<60) or c2.start<=c.end) and c==c2 and c2.classrooms not in c.classrooms:
+                        if ((shuck and k<len(gurt[0])and j>=len(gurt[0])and c2.start-c.end<60) or c2.start<=c.end) and c==c2 and c2.classrooms not in c.classrooms:
+                            if c2.start!=c.end: shuck=False
                             if k < len(gurt[0]):
                                 gurt[0][k].end = c2.end if c2.start==c.end else c2.start
                             else:

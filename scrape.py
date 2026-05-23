@@ -106,11 +106,14 @@ def make_classes(start,end,lines,classroom,uncategorized):
                 elif current.isdigit() and int(current) > 20:
                     year = current
                     #print('y',year)
-                    if month=='next' and course in courses: # maybe 25/26 
+                    if month=='next' and course in courses: # Feb 25/26 
                         month = courses[course][-1][0]
                 elif any(f:=re.findall(r'(Y\d)?(S\d)?',current)[0]): # VU uses Y1S2, Y3S1 etc 
-                    if f[1]: year = f[1] # i forgot why this works i think its to use the same logic as everything else
-                    if f[0]: month = f[0]
+                    if f[0]: month = f[0] # in Feb 26 Feb (month) goes first in Y1S2 Y1 (month) goes first
+                    if f[1]:
+                        year = f[1] 
+                        if month=='next' and course in courses: # Feb 25/26 
+                            month = courses[course][-1][0]
                 elif len(current.strip())>1: # groups are one letter 1/2/3/A/B
                     course = current
                     #print('c',course)
@@ -120,13 +123,21 @@ def make_classes(start,end,lines,classroom,uncategorized):
                     #print('add',course,month,year)
                     if course not in courses: courses[course]=[]
                     if (month,year) not in courses[course]: courses[course].append((month,year))
+                    month = 'next'
+                    year = 'next'
                 current = ''
             else: current += i
 
         pmonth = pyear = ''
-        prev = None 
+        prev = None
+        for i in courses:
+            if len(courses[i])>1 and courses[i][-1]==('next','next'):
+                courses[i].pop(-1)
         for course,intakes in list(courses.items())[::-1]:
             a = []
+            for x,intake in enumerate(intakes[::-1]):
+                if not x: continue
+                if intake[0]=='next': intakes[-x] = (intakes[::-1][x][0],intakes[-x][1])
             if prev and intakes==[('next','next')]:
                 courses[course] = courses[prev][:]
             else:
@@ -170,7 +181,7 @@ def update(fn,ampm): # 0 am 1 pm
                         color = rect[-1]['non_stroking_color']
                         if type(color) != tuple:
                             color = (color,color,color)
-                        color = (round(color[0],2),round(color[1],2),round(color[2],2))
+                        color = (round(color[0],1),round(color[1],1),round(color[2],1))
                     else: color = (1.0,1.0,1.0)
                     for char in page.within_bbox(cell,strict=False).chars:
                         if char['upright']:
