@@ -1,6 +1,4 @@
 import discord # patch on patch on patch playing jenga codebase with myself
-from discord.ui import Button, View
-from discord import ButtonStyle
 from discord.ext import tasks,commands
 from datetime import datetime
 import asyncio
@@ -32,7 +30,7 @@ class RoleView(discord.ui.LayoutView):
             if n%5 == 0:
                 if n: self.add_item(row)
                 row = discord.ui.ActionRow()
-            button = Button(label=role.name,style=ButtonStyle([1,3,4][n%3]))
+            button = discord.ui.Button(label=role.name,style=discord.ButtonStyle([1,3,4][n%3]))
             button.callback = lambda i,r=role: do_role(i,r)
             row.add_item(button)
         self.add_item(row)
@@ -267,8 +265,9 @@ async def timetabler():
 
 @bot.event
 async def on_ready():
-    global webhooks
     print("ready")
+    await bot.load_extension("music")
+    global webhooks
     while True:
         try:
             if not TEST:

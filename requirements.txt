@@ -1,4 +1,7 @@
 requests
 beautifulsoup4
 pdfplumber
-discord.py
+discord.py[voice]
+yt-dlp
+spotifyscraper
+ytmusicapi
