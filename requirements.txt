@@ -5,3 +5,4 @@ discord.py[voice]
 yt-dlp
 spotifyscraper
 ytmusicapi
+youtube-transcript-api

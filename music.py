@@ -1,19 +1,30 @@
 import discord
 from discord.ext import commands
-import yt_dlp,asyncio,random,ytmusicapi,spotify_scraper,time
+import yt_dlp,asyncio,random,ytmusicapi,spotify_scraper,time,youtube_transcript_api,requests,bs4,unicodedata
+from const import MAX_SONGS,AZ
 
-# pro queue modal with 2 selects and pages???
 bot = None
+azf = lambda x:''.join(i for i in unicodedata.normalize('NFD',x).encode('ascii', 'ignore').decode('utf-8').lower() if i in 'qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM1234567890')or'e'
 
 class Song:
     def __init__(self,qidx=-1,**kwargs):
         self.id = kwargs.get('id')
+        self.spotify = kwargs.get('spotify')
         self.title = kwargs.get('title','a')
+        self.artists = kwargs.get('artists',[])
+        if self.title.startswith(">> "): self.title = "}} "+self.title[3:]
         self.url = kwargs.get('url')
         self.queued = kwargs.get('queued')
+        self.lyrics = kwargs.get('lyrics')
+        self.duration = int(kwargs.get('duration',0))
         self.qidx = qidx # unique i hope
+    def fmt(self):
+        if self.artists: return f"{self.title} - {', '.join(self.artists)}"
+        else: return self.title
     def __eq__(self,other): return self.qidx==other.qidx
     def __repr__(self): return f'{self.qidx} {self.title} {self.id} {self.url}'
+    def copy(self,qidx=-1): return Song(qidx,id=self.id,spotify=self.spotify,title=self.title,
+                                        url=self.url,queued=self.queued,lyrics=self.lyrics,artists=self.artists)
 
 class Source(discord.PCMVolumeTransformer):
     def __init__(self, original):
@@ -31,6 +42,95 @@ class Source(discord.PCMVolumeTransformer):
     @property
     def stream_time(self):
         return self.start_time
+
+class EditModal(discord.ui.Modal,title="edit queue"):
+    def __init__(self,player):
+        super().__init__(timeout=None)
+        self.player = player
+        self.qmap = {i.fmt()[:100]:i for i in player.queue}
+        self.ins = []
+        stuff = []
+        leng = 0
+        for n,i in enumerate(player.queue):
+            x=i.fmt()[:100]
+            if n==player.cidx: x = '>> ' + x
+            if leng+len(x) > 4000:
+                self.ins.append(discord.ui.TextInput(
+                    label=str(len(self.ins)+1),
+                    default="\n".join(stuff),
+                    style=discord.TextStyle.paragraph,required=False)
+                )
+                leng = 0
+                stuff = []
+            stuff.append(x)
+            leng += len(x)+1
+        if stuff: 
+            self.ins.append(discord.ui.TextInput(
+                label=str(len(self.ins)+1),
+                default="\n".join(stuff),
+                style=discord.TextStyle.paragraph,required=False)
+            )
+        for i in self.ins[:5]:
+            try:self.add_item(i)
+            except Exception as e:print(e)
+    async def on_submit(self,i):
+        queue = []
+        cidx = -1
+        n=0
+        errors = []
+        for x in '\n'.join(i.value for i in self.ins).strip().split('\n'):
+            if x in self.qmap:
+                queue.append(self.qmap[x].copy(n))
+            elif x.startswith('>> ') and x[3:] in self.qmap:
+                if cidx==-1: cidx = n
+                queue.append(self.qmap[x[3:]].copy(n))
+            else:
+                errors.append(f'couldnt find "{x}"')
+                n -= 1
+            n += 1
+            if n>=MAX_SONGS:
+                errors.append(f'max queue length is {MAX_SONGS} songs, disregarding subsequent input')
+                break
+        current = self.player.queue[self.player.cidx].fmt() if not self.player.cidx==len(self.player.queue) else -1
+        if cidx==-1: cidx=len(queue)
+        self.player.queue = queue
+        self.player.cidx = cidx
+        self.player.shuffle = False
+        self.player.shufflebtn.label = "shuffle"
+        self.player.shufflebtn.style = discord.ButtonStyle.blurple
+        if current!=-1 and cidx==len(queue):
+            errors.append('no >> pointer found, skipping to the end')
+        if errors: await i.response.send_message('\n'.join(errors)[:2000],ephemeral=True,delete_after=20)
+        else: await i.response.defer()
+        if current!=(queue[cidx].fmt() if cidx<len(queue) else -1):
+            self.player.cidx -= 1
+            await self.player.fnext()
+        else:
+            self.player.loadurl(self.player.cidx+1)
+            await self.player.frefresh()
+
+class LyricsModal(discord.ui.Modal):
+    def __init__(self,song):
+        super().__init__(timeout=None,title="info")
+        self.add_item(discord.ui.TextDisplay(content=f'''
+{song.fmt()}
+{(song.duration//60)%60:02}:{song.duration%60:02}
+https://www.youtube.com/watch?v={song.id}
+{song.spotify or ""}'''))
+        s = 0
+        a=[]
+        n=0
+        for i in (song.lyrics or "loading lyrics - pls reopen popup").split('\n'):
+            if s+len(i)>4000:
+                self.add_item(discord.ui.TextInput(label='.',default='\n'.join(a),style=discord.TextStyle.paragraph,required=False))
+                s=0
+                a=[]
+                n+=1
+                if n>=5:return
+            a.append(i)
+            s+=len(i)+1
+        if a:self.add_item(discord.ui.TextInput(label='.',default='\n'.join(a),style=discord.TextStyle.paragraph,required=False))
+    async def on_submit(self,i):await i.response.defer()
 
 class PlayerView(discord.ui.LayoutView):
     def __init__(self,guild,msg):
@@ -61,14 +161,17 @@ class PlayerView(discord.ui.LayoutView):
         row.add_item(self.shufflebtn)
         self.add_item(row)
         row = discord.ui.ActionRow()
-        self.editbtn = discord.ui.Button(label='edit',style=discord.ButtonStyle.blurple)
         self.clearbtn = discord.ui.Button(label='clear',style=discord.ButtonStyle.red)
         self.leavebtn = discord.ui.Button(label='leave',style=discord.ButtonStyle.red)
-        #row.add_item(self.editbtn)
+        self.editbtn = discord.ui.Button(label='edit',style=discord.ButtonStyle.blurple)
+        self.lyricsbtn = discord.ui.Button(label='lyrics',style=discord.ButtonStyle.blurple)
         row.add_item(self.clearbtn)
         row.add_item(self.leavebtn)
+        row.add_item(self.editbtn)
+        row.add_item(self.lyricsbtn)
         self.add_item(row)
-
+        
+        self.btns = [self.prevbtn,self.nextbtn,self.clearbtn,self.playbtn,self.leavebtn,self.shufflebtn,self.editbtn,self.lyricsbtn]
         self.nextbtn.callback = self.fnext
         self.clearbtn.callback = self.fclear
         self.playbtn.callback = self.fpause
@@ -76,30 +179,56 @@ class PlayerView(discord.ui.LayoutView):
         self.leavebtn.callback = self.fleave
         self.shufflebtn.callback = self.fshuffle
         self.select.callback = self.fselect
-        #self.editbtn.callback = self.fedit
+        self.editbtn.callback = self.fedit
+        self.lyricsbtn.callback = self.flyrics
 
-    async def check(self,i):
+    async def check(self,i,defer=True):
         if not self.guild.voice_client:
-            await i.response.defer()
+            if defer: await i.response.defer()
             return True
-        if i:
+        elif i:
             if not i.user.voice or i.user.voice.channel!=self.guild.voice_client.channel:
                 await i.response.send_message("join vc first",ephemeral=True)
                 return True
-            else:await i.response.defer()
+            elif defer:await i.response.defer()
 
     def loadurl(self,cidx):
         if cidx>=len(self.queue): return
         c = self.queue[cidx]
         if not c.id:
-            try:
-                s = searchytm(c.title,playlist=False)[0]
-                c.id = s.id
-                c.url = s.url
-            except IndexError: # search fails
+            for n in range(3):
+                try:
+                    s = searchytm(c.fmt(),playlist=False)[0]
+                    c.id = s.id
+                    c.url = s.url
+                    c.duration = s.duration
+                    break
+                except IndexError:
+                    continue
+            else:
                 c.id = "rGTGdvy409A" # cant be bothered to remove the song
                 c.url = extractyt(c.id)[0].url
-        elif not c.url: c.url = extractyt(c.id)[0].url
+                c.duration = 1
+        elif not c.url:
+            s = extractyt(c.id)[0]
+            c.url = s.url
+            c.duration = s.duration
+
+    def loadlyrics(self):
+        c=self.queue[self.cidx]
+        if not c.lyrics:
+            if c.spotify:
+                artist = azf(c.artists[0])
+                soup = bs4.BeautifulSoup(requests.get(f'{AZ}/{artist[0]}/{artist}.html').content,'lxml')
+                songs = [AZ+i.get('href') for i in soup.find_all('a')if(i.get('href')or'').startswith(f'/lyrics/{artist}/')and not i.text.endswith(' Version)')and c.title in i.text]
+                if songs:
+                    c.lyrics = ''.join([i.getText() for i in bs4.BeautifulSoup(requests.get(songs[0]).content,'lxml').find_all('div',attrs={'class':None,'id':None})]).strip()+f"\n\nlyrics found on azlyrics"
+                else:c.lyrics = "no lyrics found"
+            else: # reverse back to spotify from youtube is inaccurateish or i just wanna push them towards using spotify
+                try: c.lyrics = '\n'.join(i.text for i in youtube_transcript_api.YouTubeTranscriptApi().fetch(c.id).snippets).strip()
+                except: pass
+                if c.lyrics: c.lyrics = c.lyrics + f"\n\nlyrics found on youtube subtitles"
+                else: c.lyrics = "no subtitles"
 
     async def fnext(self,i=None,channel=None):
         if await self.check(i): return
@@ -116,6 +245,7 @@ class PlayerView(discord.ui.LayoutView):
             self.guild.voice_client.play(Source(src),
                 after=lambda e: asyncio.run_coroutine_threadsafe(self.fnext(),bot.loop))
             if self.paused: self.guild.voice_client.pause()
+            self.loadlyrics()
             self.loadurl(self.cidx+1)
         elif self.paused:
             await self.fpause()
@@ -132,7 +262,7 @@ class PlayerView(discord.ui.LayoutView):
         elif len(self.queue)-self.cidx<12:start = len(self.queue)-24
         else:start = self.cidx-13
         for n,i in enumerate((self.queue+[Song(title='the end')])[start:start+25]):
-            self.select.add_option(label=i.title[:100],default=(n+start==self.cidx),value=n+start)
+            self.select.add_option(label=i.fmt()[:100],default=(n+start==self.cidx),value=n+start)
         async for m in channel.history(limit=1):
             c=f"{min(len(self.queue),self.cidx+1)}/{len(self.queue)}"
             if self.cidx!=len(self.queue): c = c + f" - {self.queue[self.cidx].queued}"
@@ -169,13 +299,14 @@ class PlayerView(discord.ui.LayoutView):
 
     async def fprev(self,i=None):
         if await self.check(i): return
-        #self.cidx = max(0,self.cidx-1) - 1
         self.cidx = max(0,self.cidx-(self.guild.voice_client.source and self.guild.voice_client.source.stream_time<6.7)) - 1
         await self.fnext()
 
     async def fleave(self,i=None):
         if await self.check(i): return
-        for btn in [self.playbtn,self.shufflebtn,self.leavebtn,self.nextbtn,self.prevbtn,self.clearbtn]: btn.style=discord.ButtonStyle.gray
+        for btn in self.btns:
+            btn.disabled = True
+            btn.style=discord.ButtonStyle.gray
         await self.frefresh()
         await self.guild.voice_client.disconnect()
         del servers[self.guild.id] 
@@ -198,6 +329,13 @@ class PlayerView(discord.ui.LayoutView):
         await self.frefresh()
         self.loadurl(self.cidx+1)
 
+    async def fedit(self,i=None):
+        if not await self.check(i,defer=False): await i.response.send_modal(EditModal(self))
+
+    async def flyrics(self,i=None):
+        if self.cidx==len(self.queue): await i.response.defer()
+        else: await i.response.send_modal(LyricsModal(self.queue[self.cidx]))
+
 servers = {}
 
 def extractyt(url):
@@ -213,9 +351,13 @@ def extractyt(url):
                 return infos
     return []
 def searchytm(search,playlist=False):
-    with ytmusicapi.YTMusic() as ytm:x= [i for i in ytm.search(search)if (i['resultType']in['playlist','album'])==playlist]
+    with ytmusicapi.YTMusic() as ytm:
+        x= [i for i in ytm.search(search)if (i['resultType']in['playlist','album'])==playlist]
     if playlist: return extractyt(x[0]['playlistId'])
-    else: return extractyt(x[0]['videoId'])
+    else:
+        for n in range(5):
+            try: return extractyt(x[n]['videoId']) # age restrictions and such
+            except: continue
 searchfmt = lambda x:f'{x.name} - {", ".join([i.name for i in x.artists])}'
 
 @commands.command()
@@ -235,29 +377,49 @@ async def play(ctx,*,song=''):
  
     if not song: # just summon the player
         infos = []
-    elif song.startswith('spotify:') or 'spotify.com/' in song:
-        a = song.replace(':','/')
-        with spotify_scraper.SpotifyClient() as client: #all will lead to getting stream url when needed
-            if '/album/'in a: infos=searchytm(searchfmt(client.get_album(song)),playlist=True)
-            elif '/track/'in a: infos=searchytm(searchfmt(client.get_track(song)),playlist=False)
+    infos = extractyt(song) # try yt first
+    if not infos: #spotify all
+        with spotify_scraper.SpotifyClient() as client:
+            if not (song.startswith('spotify:') or 'spotify.com/' in song): # search first
+                m = song.strip().split()[-1]
+                if m=='playlist': song=client.search(song,types=('playlist',)).playlists[0].uri
+                elif m=='album': song=client.search(song,types=('album',)).albums[0].uri
+                else: song=client.search(song,types=('track',)).tracks[0].uri
+            a = song.replace(':','/')
+            if '/track/'in a:
+                t = client.get_track(song)
+                infos=searchytm(searchfmt(t),playlist=False)
+                infos[0].artists = [i.name for i in t.artists]
+                infos[0].title = t.name
+                infos[0].spotify = t.url
+            elif '/album/'in a: # also will search ytmusic when needed instead of now
+                t = client.get_album(song,max_tracks=MAX_SONGS).tracks
+                infos = []
+                for n,x in enumerate(t):
+                    infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
             elif '/playlist/'in a: # also will search ytmusic when needed instead of now
-                infos = [Song(n,title=searchfmt(i.track)) for n,i in enumerate(client.get_playlist(song,max_tracks=10000).tracks)]
+                t = client.get_playlist(song,max_tracks=MAX_SONGS).tracks
+                infos = []
+                for n,x in enumerate(t):
+                    infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
             else:infos=[]
-    else:
-        infos = extractyt(song)
-    if not infos:
-        infos = searchytm(song,playlist=song.lower().strip().split()[-1]in['playlist','album'])
-
     x=servers[ctx.guild.id]
     for i in infos:
         i.qidx += len(x.queue)
         i.queued = ctx.author.display_name
-    if len(x.queue) == x.cidx:
-        x.queue += infos
+    x.queue += infos
+    f = 0
+    while len(x.queue)-f>MAX_SONGS and x.cidx-f: # so optimized
+        f += 1
+    if f or len(x.queue)>MAX_SONGS:
+        x.cidx -= f
+        x.queue = x.queue[f:f+MAX_SONGS]
+        for i in x.queue:
+            i.qidx -= f
+    if len(x.queue)-len(infos) == x.cidx:
         x.cidx-=1
         await x.fnext()
     else:
-        x.queue += infos
         await x.frefresh(ctx.channel)
 
 async def on_voice_state_update(member, before, after):
@@ -277,9 +439,9 @@ async def on_voice_state_update(member, before, after):
                 await servers[member.guild.id].fleave()
         elif x.disconnect:
             x.disconnect = 0
-            x.forcepaused = False
             if x.paused and x.forcepaused:
                 await x.fpause()
+            x.forcepaused = False
 
 async def setup(b):
     global bot

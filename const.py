@@ -15,3 +15,6 @@ HEAD = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:149.0) Gecko
 MONTHS = 'JAN FEB MAR APR MAY JUN JUL AUG SEP OCT NOV DEC'.split()
 WEEKDAYS = 'MON TUE WED THU FRI'.split()
 REPEAT_TIME = 600 #seconds
+
+MAX_SONGS=500
+AZ="https://azlyrics.com"
