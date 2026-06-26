@@ -377,32 +377,33 @@ async def play(ctx,*,song=''):
  
     if not song: # just summon the player
         infos = []
-    infos = extractyt(song) # try yt first
-    if not infos: #spotify all
-        with spotify_scraper.SpotifyClient() as client:
-            if not (song.startswith('spotify:') or 'spotify.com/' in song): # search first
-                m = song.strip().split()[-1]
-                if m=='playlist': song=client.search(song,types=('playlist',)).playlists[0].uri
-                elif m=='album': song=client.search(song,types=('album',)).albums[0].uri
-                else: song=client.search(song,types=('track',)).tracks[0].uri
-            a = song.replace(':','/')
-            if '/track/'in a:
-                t = client.get_track(song)
-                infos=searchytm(searchfmt(t),playlist=False)
-                infos[0].artists = [i.name for i in t.artists]
-                infos[0].title = t.name
-                infos[0].spotify = t.url
-            elif '/album/'in a: # also will search ytmusic when needed instead of now
-                t = client.get_album(song,max_tracks=MAX_SONGS).tracks
-                infos = []
-                for n,x in enumerate(t):
-                    infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
-            elif '/playlist/'in a: # also will search ytmusic when needed instead of now
-                t = client.get_playlist(song,max_tracks=MAX_SONGS).tracks
-                infos = []
-                for n,x in enumerate(t):
-                    infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
-            else:infos=[]
+    else:
+        infos = extractyt(song) # try yt first
+        if not infos: #spotify all
+            with spotify_scraper.SpotifyClient() as client:
+                if not (song.startswith('spotify:') or 'spotify.com/' in song): # search first
+                    m = song.strip().split()[-1]
+                    if m=='playlist': song=client.search(song,types=('playlist',)).playlists[0].uri
+                    elif m=='album': song=client.search(song,types=('album',)).albums[0].uri
+                    else: song=client.search(song,types=('track',)).tracks[0].uri
+                a = song.replace(':','/')
+                if '/track/'in a:
+                    t = client.get_track(song)
+                    infos=searchytm(searchfmt(t),playlist=False)
+                    infos[0].artists = [i.name for i in t.artists]
+                    infos[0].title = t.name
+                    infos[0].spotify = t.url
+                elif '/album/'in a: # also will search ytmusic when needed instead of now
+                    t = client.get_album(song,max_tracks=MAX_SONGS).tracks
+                    infos = []
+                    for n,x in enumerate(t):
+                        infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
+                elif '/playlist/'in a: # also will search ytmusic when needed instead of now
+                    t = client.get_playlist(song,max_tracks=MAX_SONGS).tracks
+                    infos = []
+                    for n,x in enumerate(t):
+                        infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
+                else:infos=[]
     x=servers[ctx.guild.id]
     for i in infos:
         i.qidx += len(x.queue)
