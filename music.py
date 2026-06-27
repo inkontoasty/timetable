@@ -112,24 +112,28 @@ class EditModal(discord.ui.Modal,title="edit queue"):
 class LyricsModal(discord.ui.Modal):
     def __init__(self,song):
         super().__init__(timeout=None,title="info")
-        self.add_item(discord.ui.TextDisplay(content=f'''
+        c = f'''
 {song.fmt()}
 {(song.duration//60)%60:02}:{song.duration%60:02}
 https://www.youtube.com/watch?v={song.id}
-{song.spotify or ""}'''))
+{song.spotify or ""}
+{song.lyrics or "loading lyrics - pls reopen popup"}'''.split('\n')
         s = 0
         a=[]
         n=0
-        for i in (song.lyrics or "loading lyrics - pls reopen popup").split('\n'):
+        for i in c:
             if s+len(i)>4000:
-                self.add_item(discord.ui.TextInput(label='.',default='\n'.join(a),style=discord.TextStyle.paragraph,required=False))
+                if n==0: self.add_item(discord.ui.TextDisplay(content='\n'.join(a)))
+                else: self.add_item(discord.ui.TextInput(label=f'{n+1}',default='\n'.join(a),style=discord.TextStyle.paragraph,required=False))
                 s=0
                 a=[]
                 n+=1
                 if n>=5:return
             a.append(i)
             s+=len(i)+1
-        if a:self.add_item(discord.ui.TextInput(label='.',default='\n'.join(a),style=discord.TextStyle.paragraph,required=False))
+        if a:
+            if n==0: self.add_item(discord.ui.TextDisplay(content='\n'.join(a)))
+            else:self.add_item(discord.ui.TextInput(label=f'{n+1}',default='\n'.join(a),style=discord.TextStyle.paragraph,required=False))
     async def on_submit(self,i):await i.response.defer()
 
 class PlayerView(discord.ui.LayoutView):
@@ -195,25 +199,24 @@ class PlayerView(discord.ui.LayoutView):
     def loadurl(self,cidx):
         if cidx>=len(self.queue): return
         c = self.queue[cidx]
-        if not c.id:
-            for n in range(3):
-                try:
+        for n in range(3):
+            try:
+                if not c.id:
                     s = searchytm(c.fmt(),playlist=False)[0]
                     c.id = s.id
                     c.url = s.url
                     c.duration = s.duration
-                    break
-                except IndexError:
-                    continue
-            else:
-                c.id = "rGTGdvy409A" # cant be bothered to remove the song
-                c.url = extractyt(c.id)[0].url
-                c.duration = 1
-        elif not c.url:
-            s = extractyt(c.id)[0]
-            c.url = s.url
-            c.duration = s.duration
-
+                elif not c.url:
+                    s = extractyt(c.id)[0]
+                    c.url = s.url
+                    c.duration = s.duration
+                break
+            except Exception as e:err=r
+        else:
+            print(err)
+            c.id = "0cVglFyHAQg" # cant be bothered to remove the song
+            c.url = extractyt(c.id)[0].url
+            c.duration = 7
     def loadlyrics(self):
         c=self.queue[self.cidx]
         if not c.lyrics:
@@ -222,12 +225,12 @@ class PlayerView(discord.ui.LayoutView):
                 soup = bs4.BeautifulSoup(requests.get(f'{AZ}/{artist[0]}/{artist}.html').content,'lxml')
                 songs = [AZ+i.get('href') for i in soup.find_all('a')if(i.get('href')or'').startswith(f'/lyrics/{artist}/')and not i.text.endswith(' Version)')and c.title in i.text]
                 if songs:
-                    c.lyrics = ''.join([i.getText() for i in bs4.BeautifulSoup(requests.get(songs[0]).content,'lxml').find_all('div',attrs={'class':None,'id':None})]).strip()+f"\n\nlyrics found on azlyrics"
+                    c.lyrics = songs[0] + "\n\n" + ''.join([i.getText() for i in bs4.BeautifulSoup(requests.get(songs[0]).content,'lxml').find_all('div',attrs={'class':None,'id':None})]).strip()
                 else:c.lyrics = "no lyrics found"
             else: # reverse back to spotify from youtube is inaccurateish or i just wanna push them towards using spotify
                 try: c.lyrics = '\n'.join(i.text for i in youtube_transcript_api.YouTubeTranscriptApi().fetch(c.id).snippets).strip()
                 except: pass
-                if c.lyrics: c.lyrics = c.lyrics + f"\n\nlyrics found on youtube subtitles"
+                if c.lyrics: c.lyrics = f"lyrics found on youtube subtitles\n\n" + c.lyrics
                 else: c.lyrics = "no subtitles"
 
     async def fnext(self,i=None,channel=None):
@@ -353,11 +356,12 @@ def extractyt(url):
 def searchytm(search,playlist=False):
     with ytmusicapi.YTMusic() as ytm:
         x= [i for i in ytm.search(search)if (i['resultType']in['playlist','album'])==playlist]
-    if playlist: return extractyt(x[0]['playlistId'])
-    else:
-        for n in range(5):
-            try: return extractyt(x[n]['videoId']) # age restrictions and such
-            except: continue
+    for n in range(5):
+        try:
+            if playlist: return extractyt(x[n]['playlistId'])
+            else: return extractyt(x[n]['videoId']) # age restrictions and such
+        except Exception as e: err=e
+    else: raise err
 searchfmt = lambda x:f'{x.name} - {", ".join([i.name for i in x.artists])}'
 
 @commands.command()
@@ -380,30 +384,33 @@ async def play(ctx,*,song=''):
     else:
         infos = extractyt(song) # try yt first
         if not infos: #spotify all
-            with spotify_scraper.SpotifyClient() as client:
-                if not (song.startswith('spotify:') or 'spotify.com/' in song): # search first
-                    m = song.strip().split()[-1]
-                    if m=='playlist': song=client.search(song,types=('playlist',)).playlists[0].uri
-                    elif m=='album': song=client.search(song,types=('album',)).albums[0].uri
-                    else: song=client.search(song,types=('track',)).tracks[0].uri
-                a = song.replace(':','/')
-                if '/track/'in a:
-                    t = client.get_track(song)
-                    infos=searchytm(searchfmt(t),playlist=False)
-                    infos[0].artists = [i.name for i in t.artists]
-                    infos[0].title = t.name
-                    infos[0].spotify = t.url
-                elif '/album/'in a: # also will search ytmusic when needed instead of now
-                    t = client.get_album(song,max_tracks=MAX_SONGS).tracks
-                    infos = []
-                    for n,x in enumerate(t):
-                        infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
-                elif '/playlist/'in a: # also will search ytmusic when needed instead of now
-                    t = client.get_playlist(song,max_tracks=MAX_SONGS).tracks
-                    infos = []
-                    for n,x in enumerate(t):
-                        infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
-                else:infos=[]
+            m = song.strip().split()[-2:]
+            if 'youtube' in m:
+                infos = searchytm(song,playlist=('playlist' in m or 'album' in m))
+            else: # bad python practice cuh how else u gonna do this
+                with spotify_scraper.SpotifyClient() as client:
+                    if not (song.startswith('spotify:') or 'spotify.com/' in song): # search first
+                        if 'playlist'in m: song=client.search(song,types=('playlist',)).playlists[0].uri
+                        elif'album'in m: song=client.search(song,types=('album',)).albums[0].uri
+                        else: song=client.search(song,types=('track',)).tracks[0].uri
+                    a = song.replace(':','/')
+                    if '/track/'in a:
+                        t = client.get_track(song)
+                        infos=searchytm(searchfmt(t),playlist=False)
+                        infos[0].artists = [i.name for i in t.artists]
+                        infos[0].title = t.name
+                        infos[0].spotify = t.url
+                    elif '/album/'in a: # also will search ytmusic when needed instead of now
+                        t = client.get_album(song).tracks
+                        infos = []
+                        for n,x in enumerate(t):
+                            infos.append(Song(n,title=x.name,artists=[i.name for i in x.artists],spotify=x.url))
+                    elif '/playlist/'in a: # also will search ytmusic when needed instead of now
+                        t = client.get_playlist(song,max_tracks=MAX_SONGS).tracks
+                        infos = []
+                        for n,x in enumerate(t):
+                            infos.append(Song(n,title=x.track.name,artists=[i.name for i in x.track.artists],spotify=x.track.url))
+                    else:infos=[]
     x=servers[ctx.guild.id]
     for i in infos:
         i.qidx += len(x.queue)
