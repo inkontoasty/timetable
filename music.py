@@ -233,20 +233,24 @@ class PlayerView(discord.ui.LayoutView):
                 if c.lyrics: c.lyrics = f"lyrics found on youtube subtitles\n\n" + c.lyrics
                 else: c.lyrics = "no subtitles"
 
-    async def fnext(self,i=None,channel=None):
+    async def fnext(self,i=None,channel=None,error=None):
         if await self.check(i): return
+        if error: self.cidx -= 1
         if self.guild.voice_client.is_playing():
             self.guild.voice_client.stop()
             return
         else:
             self.cidx = min(self.cidx+1,len(self.queue))
+        if error and 0<=self.cidx<len(self.queue):
+            self.queue[self.cidx].url = None
+            print(error)
         await self.frefresh(channel=channel)
         if self.cidx != len(self.queue):
             self.loadurl(self.cidx)
             src = discord.FFmpegPCMAudio(self.queue[self.cidx].url,
                 before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',options='-vn')
             self.guild.voice_client.play(Source(src),
-                after=lambda e: asyncio.run_coroutine_threadsafe(self.fnext(),bot.loop))
+                after=lambda e: asyncio.run_coroutine_threadsafe(self.fnext(error=e),bot.loop))
             if self.paused: self.guild.voice_client.pause()
             self.loadlyrics()
             self.loadurl(self.cidx+1)
