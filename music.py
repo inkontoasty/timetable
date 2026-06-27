@@ -2,7 +2,6 @@ import discord
 from discord.ext import commands
 import yt_dlp,asyncio,random,ytmusicapi,spotify_scraper,time,youtube_transcript_api,requests,bs4,unicodedata
 from const import MAX_SONGS,AZ
-
 bot = None
 azf = lambda x:''.join(i for i in unicodedata.normalize('NFD',x).encode('ascii', 'ignore').decode('utf-8').lower() if i in 'qwertyuiopasdfghjklzxcvbnmQWERTYUIOPASDFGHJKLZXCVBNM1234567890')or'e'
 
@@ -31,13 +30,25 @@ class Source(discord.PCMVolumeTransformer):
         super().__init__(original, 1.0)
         self.start_time = 0.0
         self.frames_read = 0
-        self.sample_rate = 48000  # Standard Opus sample rate
-        self.channels = 2         # Stereo
+        self.sample_rate = 48000  
+        self.channels = 2         
+        self.ffmpeg_error = None  
     def read(self):
         result = super().read()
-        if result: # Each PCM frame is 20ms of audio (960 samples per channel)
+        if result: 
             self.frames_read += 1
             self.start_time = self.frames_read * 0.02
+        else:
+            process = getattr(self.original, '_process', None)
+            if process and not self.ffmpeg_error:
+                return_code = process.poll()
+                retries = 0
+                while return_code is None and retries < 5:
+                    time.sleep(0.01)
+                    return_code = process.poll()
+                    retries += 1
+                if return_code not in (0, None):
+                    self.ffmpeg_error = Exception(f"FFmpeg exited with code {return_code}")
         return result
     @property
     def stream_time(self):
@@ -122,7 +133,7 @@ https://www.youtube.com/watch?v={song.id}
         a=[]
         n=0
         for i in c:
-            if s+len(i)>4000:
+            if s+len(i)>3992:
                 if n==0: self.add_item(discord.ui.TextDisplay(content='\n'.join(a)))
                 else: self.add_item(discord.ui.TextInput(label=f'{n+1}',default='\n'.join(a),style=discord.TextStyle.paragraph,required=False))
                 s=0
@@ -217,8 +228,16 @@ class PlayerView(discord.ui.LayoutView):
             c.id = "0cVglFyHAQg" # cant be bothered to remove the song
             c.url = extractyt(c.id)[0].url
             c.duration = 7
-    def loadlyrics(self):
-        c=self.queue[self.cidx]
+    def playsong(self):
+        cidx=self.cidx
+        self.loadurl(cidx)
+        if cidx!=self.cidx: return
+        src = Source(discord.FFmpegPCMAudio(
+                     self.queue[cidx].url,before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',options='-vn'))
+        self.guild.voice_client.play(Source(src),
+            after=lambda e: asyncio.run_coroutine_threadsafe(self.fnext(error=(e or src.ffmpeg_error)),bot.loop))
+        if self.paused: self.guild.voice_client.pause()
+        c=self.queue[cidx]
         if not c.lyrics:
             if c.spotify:
                 artist = azf(c.artists[0])
@@ -232,6 +251,7 @@ class PlayerView(discord.ui.LayoutView):
                 except: pass
                 if c.lyrics: c.lyrics = f"lyrics found on youtube subtitles\n\n" + c.lyrics
                 else: c.lyrics = "no subtitles"
+        if self.cidx==cidx: self.loadurl(cidx+1)
 
     async def fnext(self,i=None,channel=None,error=None):
         if await self.check(i): return
@@ -243,17 +263,9 @@ class PlayerView(discord.ui.LayoutView):
             self.cidx = min(self.cidx+1,len(self.queue))
         if error and 0<=self.cidx<len(self.queue):
             self.queue[self.cidx].url = None
-            print(error)
         await self.frefresh(channel=channel)
         if self.cidx != len(self.queue):
-            self.loadurl(self.cidx)
-            src = discord.FFmpegPCMAudio(self.queue[self.cidx].url,
-                before_options='-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5',options='-vn')
-            self.guild.voice_client.play(Source(src),
-                after=lambda e: asyncio.run_coroutine_threadsafe(self.fnext(error=e),bot.loop))
-            if self.paused: self.guild.voice_client.pause()
-            self.loadlyrics()
-            self.loadurl(self.cidx+1)
+            await asyncio.to_thread(self.playsong)
         elif self.paused:
             await self.fpause()
 
@@ -334,7 +346,7 @@ class PlayerView(discord.ui.LayoutView):
             try: self.cidx = self.queue.index(Song(current))
             except: pass
         await self.frefresh()
-        self.loadurl(self.cidx+1)
+        await asyncio.to_thread(self.loadurl,self.cidx+1)
 
     async def fedit(self,i=None):
         if not await self.check(i,defer=False): await i.response.send_modal(EditModal(self))
