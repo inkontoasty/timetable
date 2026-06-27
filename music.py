@@ -23,7 +23,7 @@ class Song:
         else: return self.title
     def __eq__(self,other): return self.qidx==other.qidx
     def __repr__(self): return f'{self.qidx} {self.title} {self.id} {self.url}'
-    def copy(self,qidx=-1): return Song(qidx,id=self.id,spotify=self.spotify,title=self.title,duration=self.duration
+    def copy(self,qidx=-1): return Song(qidx,id=self.id,spotify=self.spotify,title=self.title,duration=self.duration,
                                         url=self.url,queued=self.queued,lyrics=self.lyrics,artists=self.artists)
 
 class Source(discord.PCMVolumeTransformer):
