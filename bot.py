@@ -236,7 +236,7 @@ async def timetabler():
                                 toadd['webhook'].add(c.course)
                         if TEST or c.course in webhooks:
                             strings = '.'.join(f'@{subject}'for subject in c.subjects)+f' {" / ".join(c.classrooms)} | {c.text}'
-                            #print(c.course,strings)
+                            print(c.course,strings)
                             if TEST:
                                 open(f'test\\{c.course}.txt','a').write(f'{day} {mins//60}:{mins%60} - {strings} **{c.start/60}-{c.end/60}\n')
                             else:
@@ -265,9 +265,9 @@ async def timetabler():
 
 @bot.event
 async def on_ready():
-    print("ready")
     await bot.load_extension("music")
     global webhooks
+    print("ready")
     while True:
         try:
             if not TEST:

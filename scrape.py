@@ -54,10 +54,10 @@ class Class: # whos gonna stop me
         self.subjects = subjects
         self.classrooms = classrooms
         self.text = text
-        self.line1 = text.split('|')[-1].strip()
+        self.line1 = text.split('|')[-1].strip().replace('–','-')
 
     def __eq__(self,other):
-        return self.subjects==other.subjects and self.course==other.course and self.line1==other.line1
+        return self.subjects==other.subjects and self.course==other.course and self.line1.replace(' ','')==other.line1.replace(' ','')
 
 def gettime(s,ampm):
     s = re.findall(r'(\d\d?)\.(\d\d)(-(\d\d?)\.(\d\d))?',s)
@@ -95,7 +95,7 @@ def make_classes(start,end,lines,classroom,uncategorized):
         course = None
         month = 'next'
         year = 'next'
-        proc = lines[1].upper().replace('-','/').strip()+'/'
+        proc = lines[1].upper().replace('–','-').replace('-','/').strip()+'/'
         #print(proc)
 
         for n,i in enumerate(proc):
