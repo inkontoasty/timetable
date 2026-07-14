@@ -265,7 +265,8 @@ async def timetabler():
 
 @bot.event
 async def on_ready():
-    await bot.load_extension("music")
+    try: await bot.load_extension("music")
+    except: pass
     global webhooks
     print("ready")
     while True:
