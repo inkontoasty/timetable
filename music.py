@@ -242,7 +242,7 @@ class PlayerView(discord.ui.LayoutView):
             if c.spotify:
                 artist = azf(c.artists[0])
                 soup = bs4.BeautifulSoup(requests.get(f'{AZ}/{artist[0]}/{artist}.html').content,'lxml')
-                songs = [AZ+i.get('href') for i in soup.find_all('a')if(i.get('href')or'').startswith(f'/lyrics/{artist}/')and not i.text.endswith(' Version)')and c.title in i.text or i.text in c.title]
+                songs = [AZ+i.get('href') for i in soup.find_all('a')if(i.get('href')or'').startswith(f'/lyrics/{artist}/')and not i.text.endswith(' Version)')and (c.title in i.text or i.text in c.title)]
                 if songs:
                     c.lyrics = songs[0] + "\n\n" + ''.join([i.getText() for i in bs4.BeautifulSoup(requests.get(songs[0]).content,'lxml').find_all('div',attrs={'class':None,'id':None})]).strip()
                 else:c.lyrics = "no lyrics found"
