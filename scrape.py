@@ -5,7 +5,7 @@ import re
 import os
 from const import *
 import random
-
+import traceback
 last_update = None
 session = requests.Session()
 try: os.mkdir('stuff')
@@ -208,27 +208,29 @@ def update(fn,ampm): # 0 am 1 pm
         elif current:
             prev = None
             for n,(color,cell) in enumerate(row[1:]):
-                if cell:
-                    #print(n,headcol,color,cell)
-                    start,end = gettime(current[n],ampm)
-                    s,e = gettime(cell,ampm)
-                    start = s or start
-                    end = e or end
-                    now = make_classes(start,end,cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol)
-                    if e:
-                        yo += now
-                        prev = None
-                    elif not prev or now!=prev:
-                        yo += now
-                        prev = now
-                    elif prev:
-                        if s:
-                            for i in prev:
-                                i.end = now[0].start
+                try:
+                    if cell:
+                        #print(n,headcol,color,cell)
+                        start,end = gettime(current[n],ampm)
+                        s,e = gettime(cell,ampm)
+                        start = s or start
+                        end = e or end
+                        now = make_classes(start,end,cell.split('\n'),' | '.join(row[0][1].split('\n')),color==headcol)
+                        if e:
+                            yo += now
                             prev = None
-                        else:
-                            for i in prev:
-                                i.end = now[0].end
+                        elif not prev or now!=prev:
+                            yo += now
+                            prev = now
+                        elif prev:
+                            if s:
+                                for i in prev:
+                                    i.end = now[0].start
+                                prev = None
+                            else:
+                                for i in prev:
+                                    i.end = now[0].end
+                except: print(cell,traceback.format_exc())
     k = 0
     while k < len(yo):
         c = yo[k]
